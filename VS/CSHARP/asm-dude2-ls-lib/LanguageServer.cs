@@ -1402,6 +1402,11 @@ namespace AsmDude2LS
                                 Language = MarkupKind.PlainText.ToString(),
                                 Value = full_Descr + "\n",
                             }),
+                            //new SumType<string, MarkedString>(new MarkedString
+                            //{
+                            //    Language = MarkupKind.Markdown.ToString(),
+                            //    Value = "[ADDPD]: https://github.com/HJLebbink/asm-dude/wiki/ADDPD [ADDPD]",
+                            //}),
                             new SumType<string, MarkedString>(new MarkedString
                             {
                                 Language = MarkupKind.Markdown.ToString(),

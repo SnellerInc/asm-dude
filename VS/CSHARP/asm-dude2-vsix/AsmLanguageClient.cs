@@ -36,6 +36,7 @@ using Newtonsoft.Json.Linq;
 using System.ComponentModel.Composition;
 using AsmDude2.Tools;
 using AsmTools;
+using System.Windows.Forms;
 
 namespace AsmDude2
 {
@@ -241,6 +242,14 @@ namespace AsmDude2
         public async Task<Connection> ActivateAsync(CancellationToken token)
         {
             string lspPath = ApplicationInformation.LspPath();
+            if (!File.Exists(lspPath))
+            {
+                string title = "Microsoft Visual Studio";
+                string text1 = $"AsmDude2 could not find the Language Server Provider (LSP)\nat the expected place: \"{lspPath}\"";
+                MessageBox.Show(text1, title, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return null;
+            }
+
             AsmDudeToolsStatic.Output_INFO("AsmLanguageClient: starting Language Server (LSP) " + lspPath);
 
             ProcessStartInfo info = new ProcessStartInfo
