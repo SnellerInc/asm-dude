@@ -121,7 +121,6 @@ namespace AsmDude2
 
         private void PerformanceInfo_Update(bool value)
         {
-            this.PerformanceInfo_IsDefaultCollapsed_UI.IsEnabled = value;
             //this.PerformanceInfo_SandyBridge_UI.IsEnabled = value;
             this.PerformanceInfo_IvyBridge_UI.IsEnabled = value;
             this.PerformanceInfo_Haswell_UI.IsEnabled = value;
@@ -138,7 +137,6 @@ namespace AsmDude2
 
         private void CodeFolding_Update(bool value)
         {
-            this.CodeFolding_IsDefaultCollapsed_UI.IsEnabled = value;
             this.CodeFolding_BeginTag_UI.IsEnabled = value;
             this.CodeFolding_EndTag_UI.IsEnabled = value;
         }
@@ -298,12 +296,6 @@ namespace AsmDude2
         {
             get { return this.CodeFolding_On_UI.IsChecked ?? false; }
             set { this.CodeFolding_On_UI.IsChecked = value; }
-        }
-
-        public bool CodeFolding_IsDefaultCollapsed
-        {
-            get { return this.CodeFolding_IsDefaultCollapsed_UI.IsChecked ?? false; }
-            set { this.CodeFolding_IsDefaultCollapsed_UI.IsChecked = value; }
         }
 
         public string CodeFolding_BeginTag
@@ -467,12 +459,6 @@ namespace AsmDude2
         {
             get { return this.PerformanceInfo_On_UI.IsChecked ?? false; }
             set { this.PerformanceInfo_On_UI.IsChecked = value; }
-        }
-
-        public bool PerformanceInfo_IsDefaultCollapsed
-        {
-            get { return this.PerformanceInfo_IsDefaultCollapsed_UI.IsChecked ?? false; }
-            set { this.PerformanceInfo_IsDefaultCollapsed_UI.IsChecked = value; }
         }
 
         public bool PerformanceInfo_SandyBridge_On

@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 // The MIT License (MIT)
 //
 // Copyright (c) 2023 Henk-Jan Lebbink
@@ -28,7 +27,6 @@ namespace AsmDude2
     using System.ComponentModel;
     using System.Diagnostics.Contracts;
     using System.Drawing;
-    using System.Linq;
     using System.Runtime.InteropServices;
     using System.Text;
     using System.Windows.Forms;
@@ -48,7 +46,6 @@ namespace AsmDude2
         AsmDoc_Url,
 
         CodeFolding_On,
-        CodeFolding_IsDefaultCollapsed,
         CodeFolding_BeginTag,
         CodeFolding_EndTag,
 
@@ -77,7 +74,6 @@ namespace AsmDude2
         SyntaxHighlighting_Userdefined3_Italic,
 
         PerformanceInfo_On,
-        PerformanceInfo_IsDefaultCollapsed,
         PerformanceInfo_SandyBridge_On,
         PerformanceInfo_IvyBridge_On,
         PerformanceInfo_Haswell_On,
@@ -388,7 +384,6 @@ namespace AsmDude2
 
             #region CodeFolding
             this.Set_GUI(PropertyEnum.CodeFolding_On);
-            this.Set_GUI(PropertyEnum.CodeFolding_IsDefaultCollapsed);
             this.Set_GUI(PropertyEnum.CodeFolding_BeginTag);
             this.Set_GUI(PropertyEnum.CodeFolding_EndTag);
             #endregion
@@ -421,7 +416,6 @@ namespace AsmDude2
 
             #region Latency and Throughput Information (Performance Info)
             this.Set_GUI(PropertyEnum.PerformanceInfo_On);
-            this.Set_GUI(PropertyEnum.PerformanceInfo_IsDefaultCollapsed);
             this.Set_GUI(PropertyEnum.PerformanceInfo_SandyBridge_On);
             this.Set_GUI(PropertyEnum.PerformanceInfo_IvyBridge_On);
             this.Set_GUI(PropertyEnum.PerformanceInfo_Haswell_On);
@@ -531,7 +525,6 @@ namespace AsmDude2
 
             #region CodeFolding
             changed |= this.Setting_Changed(PropertyEnum.CodeFolding_On, sb);
-            changed |= this.Setting_Changed(PropertyEnum.CodeFolding_IsDefaultCollapsed, sb);
             changed |= this.Setting_Changed(PropertyEnum.CodeFolding_BeginTag, sb);
             changed |= this.Setting_Changed(PropertyEnum.CodeFolding_EndTag, sb);
             #endregion
@@ -564,7 +557,6 @@ namespace AsmDude2
 
             #region Latency and Throughput Information (Performance Info)
             changed |= this.Setting_Changed(PropertyEnum.PerformanceInfo_On, sb);
-            changed |= this.Setting_Changed(PropertyEnum.PerformanceInfo_IsDefaultCollapsed, sb);
             changed |= this.Setting_Changed(PropertyEnum.PerformanceInfo_SandyBridge_On, sb);
             changed |= this.Setting_Changed(PropertyEnum.PerformanceInfo_IvyBridge_On, sb);
             changed |= this.Setting_Changed(PropertyEnum.PerformanceInfo_Haswell_On, sb);
@@ -784,7 +776,6 @@ namespace AsmDude2
 
             #region CodeFolding
             if (this.Setting_Update(PropertyEnum.CodeFolding_On)) { changed = true; }
-            if (this.Setting_Update(PropertyEnum.CodeFolding_IsDefaultCollapsed)) { changed = true; }
             if (this.Setting_Update(PropertyEnum.CodeFolding_BeginTag)) { changed = true; }
             if (this.Setting_Update(PropertyEnum.CodeFolding_EndTag)) { changed = true; }
             #endregion
@@ -883,7 +874,6 @@ namespace AsmDude2
 
             #region Latency and Throughput Information (Performance Info)
             if (this.Setting_Update(PropertyEnum.PerformanceInfo_On)) { changed = true; }
-            if (this.Setting_Update(PropertyEnum.PerformanceInfo_IsDefaultCollapsed)) { changed = true; }
             if (this.Setting_Update(PropertyEnum.PerformanceInfo_SandyBridge_On)) { changed = true; }
             if (this.Setting_Update(PropertyEnum.PerformanceInfo_IvyBridge_On)) { changed = true; }
             if (this.Setting_Update(PropertyEnum.PerformanceInfo_Haswell_On)) { changed = true; }

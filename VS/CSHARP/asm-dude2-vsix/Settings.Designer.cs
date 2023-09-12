@@ -206,18 +206,6 @@ namespace AsmDude2 {
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("True")]
-        public bool CodeFolding_IsDefaultCollapsed {
-            get {
-                return ((bool)(this["CodeFolding_IsDefaultCollapsed"]));
-            }
-            set {
-                this["CodeFolding_IsDefaultCollapsed"] = value;
-            }
-        }
-        
-        [global::System.Configuration.UserScopedSettingAttribute()]
-        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("True")]
         public bool useAssemblerMasm {
             get {
                 return ((bool)(this["useAssemblerMasm"]));
@@ -1664,18 +1652,6 @@ namespace AsmDude2 {
             }
             set {
                 this["PerformanceInfo_SkylakeX_On"] = value;
-            }
-        }
-        
-        [global::System.Configuration.UserScopedSettingAttribute()]
-        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("False")]
-        public bool PerformanceInfo_IsDefaultCollapsed {
-            get {
-                return ((bool)(this["PerformanceInfo_IsDefaultCollapsed"]));
-            }
-            set {
-                this["PerformanceInfo_IsDefaultCollapsed"] = value;
             }
         }
         

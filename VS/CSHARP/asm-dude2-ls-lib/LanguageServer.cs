@@ -24,7 +24,6 @@ using AsmSourceTools;
 
 using AsmTools;
 
-using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.LanguageServer.Protocol;
 
 using Newtonsoft.Json.Linq;
@@ -61,9 +60,9 @@ namespace AsmDude2LS
         private readonly JsonRpc rpc;
         private readonly HeaderDelimitedMessageHandler messageHandler;
         private readonly LanguageServerTarget target;
-        private readonly ManualResetEvent disconnectEvent = new ManualResetEvent(false);
+        private readonly ManualResetEvent disconnectEvent = new(false);
         private readonly IList<Diagnostic> diagnostics;
- 
+
         private readonly IDictionary<Uri, TextDocumentItem> textDocuments;
         private readonly IDictionary<Uri, string[]> textDocumentLines;
         private readonly IDictionary<Uri, IEnumerable<AsmFoldingRange>> foldingRanges;
@@ -90,7 +89,7 @@ namespace AsmDude2LS
             this.textDocuments = new Dictionary<Uri, TextDocumentItem>();
             this.textDocumentLines = new Dictionary<Uri, string[]>();
 
-            this.labelGraphs = new Dictionary<Uri, LabelGraph>();            
+            this.labelGraphs = new Dictionary<Uri, LabelGraph>();
             this.foldingRanges = new Dictionary<Uri, IEnumerable<AsmFoldingRange>>();
             this.diagnostics = new List<Diagnostic>();
             this.Symbols = Array.Empty<VSSymbolInformation>();
@@ -114,14 +113,73 @@ namespace AsmDude2LS
             this.target.OnInitialized += OnTargetInitialized;
         }
 
+
+        #region Tools
+
+        private static (int, int) FindWordBoundary(int position, string lineStr)
+        {
+            // LogInfo($"FindWordBoundary: position = {position}; lineStr=\"{lineStr}\"");
+            int lineLength = lineStr.Length;
+            if (position >= lineLength)
+            {
+                return (-1, -1);
+            }
+            if (AsmTools.AsmSourceTools.IsSeparatorChar(lineStr[position]))
+            {
+                return (-1, -1);
+            }
+
+            int startPos = 0;
+            int endPos = lineLength;
+            char[] lineChars = lineStr.ToCharArray(0, lineLength);
+
+            for (int i = position + 1; i < lineLength; ++i)
+            {
+                if (AsmTools.AsmSourceTools.IsSeparatorChar(lineChars[i]))
+                {
+                    endPos = i;
+                    break;
+                }
+            }
+            for (int i = position; i >= 0; --i)
+            {
+                if (AsmTools.AsmSourceTools.IsSeparatorChar(lineChars[i]))
+                {
+                    startPos = i + 1;
+                    break;
+                }
+            }
+            return (startPos, endPos);
+        }
+
+        // Get the word at the current position from the provided string
+        private static (string, int, int) GetWord(int pos, string lineStr)
+        {
+            (int startPos, int endPos) = FindWordBoundary(pos, lineStr);
+            int length = endPos - startPos;
+
+            if (length <= 0)
+            {
+                return (String.Empty, -1, -1);
+            }
+            return (lineStr.Substring(startPos, length), startPos, endPos);
+        }
+
         private static string Truncate(string text)
         {
             if (text.Length < MAX_LENGTH_DESCR_TEXT)
             {
                 return text;
             }
-            return text.Substring(0, MAX_LENGTH_DESCR_TEXT) + "...";
+            return string.Concat(text.AsSpan(0, MAX_LENGTH_DESCR_TEXT), "...");
         }
+
+        private char GetChar(string str, int offset)
+        {
+            return ((offset < 0) || (offset >= str.Length)) ? ' ' : str.ElementAt(offset);
+        }
+
+        #endregion
 
         private string[] GetLines(Uri uri)
         {
@@ -130,6 +188,61 @@ namespace AsmDude2LS
                 return lines;
             }
             return Array.Empty<string>();
+        }
+
+        private TextDocumentItem GetTextDocument(Uri uri)
+        {
+            if (this.textDocuments.TryGetValue(uri, out TextDocumentItem document))
+            {
+                return document;
+            }
+            return null;
+        }
+
+        private void ScheduleDiagnosticMessage(
+            string message,
+            DiagnosticSeverity severity,
+            Range range,
+            TextDocumentIdentifier textDocumentIdentifier)
+        {
+            VSDiagnosticProjectInformation projectAndContext = null;
+            if (textDocumentIdentifier != null
+                && textDocumentIdentifier is VSTextDocumentIdentifier vsTextDocumentIdentifier
+                && vsTextDocumentIdentifier.ProjectContext != null)
+            {
+                projectAndContext = new VSDiagnosticProjectInformation
+                {
+                    ProjectName = vsTextDocumentIdentifier.ProjectContext.Label,
+                    ProjectIdentifier = vsTextDocumentIdentifier.ProjectContext.Id,
+                    Context = "Win32"
+                };
+            }
+
+            VSDiagnosticProjectInformation[] projects = null;
+
+
+            if (projectAndContext != null)
+            {
+                projects = new VSDiagnosticProjectInformation[] { projectAndContext };
+            }
+
+            VSDiagnostic d = new()
+            {
+                Message = message,
+                Severity = severity,
+                Range = range,
+                //Code = "Error Code Here",
+                //CodeDescription = new CodeDescription
+                //{
+                //    Href = new Uri("https://www.microsoft.com")
+                //},
+
+                Projects = projects,
+                //Identifier = $"{lineNumber},{offsetStart} {lineNumber},{offsetEnd}",
+                Tags = new DiagnosticTag[1] { (DiagnosticTag)AsmDiagnosticTag.IntellisenseError }
+            };
+
+            this.diagnostics.Add(d);
         }
 
         public string CurrentSettings
@@ -158,7 +271,6 @@ namespace AsmDude2LS
         private void OnTargetInitializeCompletion(object sender, EventArgs e)
         {
             LogInfo("LanguageServer: OnTargetInitializeCompletion");
-            //Timer timer = new Timer(LogMessage, null, 0, 5 * 1000);
         }
 
         private void OnTargetInitialized(object sender, EventArgs e)
@@ -174,7 +286,7 @@ namespace AsmDude2LS
                 LogError($"LanguageServer: Initialize: InitializationOptions is null");
                 return;
             }
-            //LogInfo($"Initialize: Options: {jToken}");
+            // LogInfo($"Initialize: Options: {jToken}");
             this.options = options;
         }
 
@@ -198,7 +310,8 @@ namespace AsmDude2LS
         private void UpdateInternals(Uri uri)
         {
             TextDocumentItem document = GetTextDocument(uri);
-            if (document != null) {
+            if (document != null)
+            {
                 if (this.textDocumentLines.ContainsKey(uri))
                 {
                     this.textDocumentLines.Remove(uri);
@@ -218,20 +331,6 @@ namespace AsmDude2LS
             }
         }
 
-        private char GetChar(string str, int offset)
-        {
-            return ((offset < 0) || (offset >= str.Length)) ? ' ' : str.ElementAt(offset);
-        }
-
-        private TextDocumentItem GetTextDocument(Uri uri)
-        {
-            if (this.textDocuments.TryGetValue(uri, out TextDocumentItem document))
-            {
-                return document;
-            }
-            return null;
-        }
-
         public void OnTextDocumentOpened(DidOpenTextDocumentParams messageParams)
         {
             this.textDocuments.Add(messageParams.TextDocument.Uri, messageParams.TextDocument);
@@ -243,52 +342,6 @@ namespace AsmDude2LS
             var uri = messageParams.TextDocument.Uri;
             this.textDocuments.Remove(uri);
             this.textDocumentLines.Remove(uri);
-        }
-
-        private void ScheduleDiagnosticMessage(
-            string message, 
-            DiagnosticSeverity severity, 
-            Range range,
-            TextDocumentIdentifier textDocumentIdentifier)
-        {
-            VSDiagnosticProjectInformation projectAndContext = null;
-            if (textDocumentIdentifier != null
-                && textDocumentIdentifier is VSTextDocumentIdentifier vsTextDocumentIdentifier
-                && vsTextDocumentIdentifier.ProjectContext != null)
-            {
-                projectAndContext = new VSDiagnosticProjectInformation
-                {
-                    ProjectName = vsTextDocumentIdentifier.ProjectContext.Label,
-                    ProjectIdentifier = vsTextDocumentIdentifier.ProjectContext.Id,
-                    Context = "Win32"
-                };
-            }
-
-            VSDiagnosticProjectInformation[] projects = null;
-
-
-            if (projectAndContext != null)
-            {
-                projects = new VSDiagnosticProjectInformation[] { projectAndContext };
-            }
-
-            VSDiagnostic d = new VSDiagnostic
-            {
-                Message = message,
-                Severity = severity,
-                Range = range,
-                //Code = "Error Code Here",
-                //CodeDescription = new CodeDescription
-                //{
-                //    Href = new Uri("https://www.microsoft.com")
-                //},
-
-                Projects = projects,
-                //Identifier = $"{lineNumber},{offsetStart} {lineNumber},{offsetEnd}",
-                Tags = new DiagnosticTag[1] { (DiagnosticTag)AsmDiagnosticTag.IntellisenseError }
-            };
-
-            this.diagnostics.Add(d);
         }
 
         private void UpdateLabelGraph(Uri uri)
@@ -303,7 +356,7 @@ namespace AsmDude2LS
             var textDocument = this.GetTextDocument(uri);
             string filename = textDocument.Uri.LocalPath;
             string[] lines = this.GetLines(uri);
-            LabelGraph labelGraph = new LabelGraph(lines, filename, this.traceSource, this.options);
+            LabelGraph labelGraph = new(lines, filename, this.traceSource, this.options);
 
 
             foreach (var (key, value) in labelGraph.Label_Clashes)
@@ -327,7 +380,7 @@ namespace AsmDude2LS
 
         private void UpdateFoldingRanges(Uri uri)
         {
-            string NextWord(int startPos, string line)
+            static string GetCollapsedText(int startPos, string line)
             {
                 int length = line.Length - startPos;
                 if (length <= 0)
@@ -347,16 +400,17 @@ namespace AsmDude2LS
             int startKeywordLength = StartKeyword.Length;
             int endKeywordLength = EndKeyword.Length;
 
-            List<AsmFoldingRange> foldingRanges = new List<AsmFoldingRange>();
-            Stack<int> startLineNumbers = new Stack<int>();
-            Stack<int> startCharacters = new Stack<int>();
+            List<AsmFoldingRange> foldingRanges = new();
+            Stack<int> startLineNumbers = new();
+            Stack<int> startCharacters = new();
 
             var lines = this.GetLines(uri);
             for (int lineNumber = 0; lineNumber < lines.Length; ++lineNumber)
             {
                 string lineStr = lines[lineNumber].ToUpper();
                 int offsetRegion = lineStr.IndexOf(StartKeyword);
-                if (offsetRegion != -1) {
+                if (offsetRegion != -1)
+                {
                     startLineNumbers.Push(lineNumber);
                     startCharacters.Push(offsetRegion);
                 }
@@ -371,13 +425,14 @@ namespace AsmDude2LS
                             TextDocumentIdentifier textDocumentIdentifier = null;//TODO
 
                             string message = $"keyword {EndKeyword} has no matching {StartKeyword} keyword";
-                            Range range = new Range()
+                            Range range = new()
                             {
                                 Start = new Position(lineNumber, offsetEndRegion),
                                 End = new Position(lineNumber, offsetEndRegion + endKeywordLength),
                             };
                             this.ScheduleDiagnosticMessage(message, severity, range, textDocumentIdentifier);
-                        } else 
+                        }
+                        else
                         {
                             int startLine = startLineNumbers.Pop();
                             int startCharacter = startCharacters.Pop();
@@ -388,7 +443,7 @@ namespace AsmDude2LS
                                 EndLine = lineNumber,
                                 EndCharacter = offsetEndRegion + endKeywordLength,
                                 Kind = FoldingRangeKind.Region,
-                                CollapsedText = NextWord(startCharacter + startKeywordLength + 1, lines[startLine]),
+                                CollapsedText = GetCollapsedText(startCharacter + startKeywordLength + 1, lines[startLine]),
                             });
                         }
                     }
@@ -411,7 +466,7 @@ namespace AsmDude2LS
 
         public void SendDiagnostics(Uri uri)
         {
-            PublishDiagnosticParams parameter = new PublishDiagnosticParams
+            PublishDiagnosticParams parameter = new()
             {
                 Uri = uri,
                 Diagnostics = this.diagnostics.ToArray(),
@@ -445,7 +500,7 @@ namespace AsmDude2LS
                 Scheme = Uri.UriSchemeFile,
             }.Uri;
 
-            CodeAction createFileAction = new CodeAction
+            CodeAction createFileAction = new()
             {
                 Title = "Create <TheCurrentFile>.txt",
                 Edit = new WorkspaceEdit
@@ -473,7 +528,7 @@ namespace AsmDude2LS
                 Scheme = Uri.UriSchemeFile,
             }.Uri;
 
-            CodeAction renameFileAction = new CodeAction
+            CodeAction renameFileAction = new()
             {
                 Title = "Rename <TheCurrentFile>.txt to <TheCurrentFile>_Renamed.txt",
                 Edit = new WorkspaceEdit
@@ -517,7 +572,7 @@ namespace AsmDude2LS
                 }
             };
 
-            CodeAction addTextAction = new CodeAction
+            CodeAction addTextAction = new()
             {
                 Title = "Add Text Action - DocumentChanges property",
                 Edit = new WorkspaceEdit
@@ -537,10 +592,10 @@ namespace AsmDude2LS
                 Kind = CodeActionKind.QuickFix,
             };
 
-            Dictionary<string, TextEdit[]> changes = new Dictionary<string, TextEdit[]>();
+            Dictionary<string, TextEdit[]> changes = new();
             changes.Add(parameter.TextDocument.Uri.AbsoluteUri, addTextEdit);
 
-            CodeAction addTextActionChangesProperty = new CodeAction
+            CodeAction addTextActionChangesProperty = new()
             {
                 Title = "Add Text Action - Changes property",
                 Edit = new WorkspaceEdit
@@ -550,7 +605,7 @@ namespace AsmDude2LS
                 Kind = CodeActionKind.QuickFix,
             };
 
-            CodeAction addUnderscoreAction = new CodeAction
+            CodeAction addUnderscoreAction = new()
             {
                 Title = "Add _",
                 Edit = new WorkspaceEdit
@@ -589,7 +644,7 @@ namespace AsmDude2LS
                 Kind = CodeActionKind.QuickFix,
             };
 
-            CodeAction addTextActionWithError = new CodeAction
+            CodeAction addTextActionWithError = new()
             {
                 Title = "Add Text Action - with error diagnostic",
                 Edit = new WorkspaceEdit
@@ -621,7 +676,7 @@ namespace AsmDude2LS
             };
 
             string editFilePath = Path.Combine(documentDirectory, documentNameNoExtension + "2.foo");
-            CodeAction addTextActionToOtherFile = new CodeAction
+            CodeAction addTextActionToOtherFile = new()
             {
                 Title = "Add Text Action - Edit on different file",
                 Edit = new WorkspaceEdit
@@ -643,7 +698,7 @@ namespace AsmDude2LS
             #endregion
 
             #region Unresolved actions
-            CodeAction unresolvedAddText = new CodeAction
+            CodeAction unresolvedAddText = new()
             {
                 Title = "Unresolved Add Text Action",
                 Data = addTextAction,
@@ -683,8 +738,8 @@ namespace AsmDude2LS
             }
 
             //TODO why not use VSLocation??
-            List<Location> locations = new List<Location>();
-            List<Location> locationsChunk = new List<Location>();
+            List<Location> locations = new();
+            List<Location> locationsChunk = new();
 
             for (int i = 0; i < lines.Length; i++)
             {
@@ -724,7 +779,7 @@ namespace AsmDude2LS
                 progress.Report(locationsChunk.ToArray());
                 Thread.Sleep(delay);  // Wait between chunks
             }
-            
+
             return locations.ToArray();
         }
 
@@ -781,7 +836,6 @@ namespace AsmDude2LS
 
         public SignatureHelp GetTextDocumentSignatureHelp(SignatureHelpParams parameter)
         {
- 
             if (!options.SignatureHelp_On)
             {
                 LogInfo($"OnTextDocumentSignatureHelp: switched off");
@@ -826,7 +880,7 @@ namespace AsmDude2LS
 
             IEnumerable<AsmSignatureInformation> x = this.mnemonicStore.GetSignatures(mnemonic);
             IEnumerable<AsmSignatureInformation> y = Constrain_Signatures(x, operands, selectedArchitectures);
-            List<SignatureInformation> z = new List<SignatureInformation>();
+            List<SignatureInformation> z = new();
             foreach (AsmSignatureInformation asmSignatureElement in y)
             {
                 LogInfo($"OnTextDocumentSignatureHelp: adding SignatureInformation: {asmSignatureElement.SignatureInformation.Label}");
@@ -868,12 +922,12 @@ namespace AsmDude2LS
             return Array.Empty<AsmFoldingRange>();
         }
 
-        private IEnumerable<CompletionItem> Mnemonic_Operand_Completions(bool useCapitals, ISet<AsmSignatureEnum> allowedOperands, int lineNumber)
+        private SortedSet<CompletionItem> Mnemonic_Operand_Completions(bool useCapitals, ISet<AsmSignatureEnum> allowedOperands, int lineNumber)
         {
             //bool use_AsmSim_In_Code_Completion = this.asmSimulator_.Enabled && Settings.Default.AsmSim_Show_Register_In_Code_Completion;
             bool att_Syntax = this.options.Used_Assembler == AssemblerEnum.NASM_ATT;
 
-            SortedSet<CompletionItem> completions = new SortedSet<CompletionItem>(new CompletionComparer());
+            SortedSet<CompletionItem> completions = new(new CompletionComparer());
 
             foreach (Rn regName in this.mnemonicStore.Get_Allowed_Registers())
             {
@@ -971,9 +1025,9 @@ namespace AsmDude2LS
         {
             IEnumerable<CompletionItem> Selected_Completions(bool useCapitals, ISet<AsmTokenType> selectedTypes, bool addSpecialKeywords)
             {
-                SortedSet<CompletionItem> completions = new SortedSet<CompletionItem>(new CompletionComparer());
+                SortedSet<CompletionItem> completions = new(new CompletionComparer());
 
-                //Add the completions of AsmDude directives (such as code folding directives)
+                // Add the completions of AsmDude directives (such as code folding directives)
                 #region
                 if (addSpecialKeywords && this.options.CodeFolding_On)
                 {
@@ -1002,7 +1056,7 @@ namespace AsmDude2LS
                 }
                 #endregion
 
-                AssemblerEnum usedAssember = this.options.Used_Assembler;
+                AssemblerEnum usedAssembler = this.options.Used_Assembler;
 
                 #region Add completions
                 if (selectedTypes.Contains(AsmTokenType.Mnemonic))
@@ -1037,14 +1091,14 @@ namespace AsmDude2LS
                             AssemblerEnum assembler = this.asmDudeTools.Get_Assembler(keyword_upcase);
                             if (assembler.HasFlag(AssemblerEnum.MASM))
                             {
-                                if (!usedAssember.HasFlag(AssemblerEnum.MASM))
+                                if (!usedAssembler.HasFlag(AssemblerEnum.MASM))
                                 {
                                     selected = false;
                                 }
                             }
                             else if (assembler.HasFlag(AssemblerEnum.NASM_INTEL) || assembler.HasFlag(AssemblerEnum.NASM_ATT))
                             {
-                                if (!usedAssember.HasFlag(AssemblerEnum.NASM_INTEL))
+                                if (!usedAssembler.HasFlag(AssemblerEnum.NASM_INTEL))
                                 {
                                     selected = false;
                                 }
@@ -1067,7 +1121,7 @@ namespace AsmDude2LS
                             descriptionStr = (string.IsNullOrEmpty(descriptionStr)) ? string.Empty : " - " + descriptionStr;
                             string displayTextFull = keyword_upcase + archStr + descriptionStr;
                             string displayText = Truncate(displayTextFull);
- 
+
                             completions.Add(new CompletionItem
                             {
                                 Kind = GetCompletionItemKind(type),
@@ -1092,31 +1146,33 @@ namespace AsmDude2LS
 
             var lines = this.GetLines(parameter.TextDocument.Uri);
             string lineStr = lines[parameter.Position.Line];
-            //LogInfo($"OnTextDocumentCompletion: lineStr: \"{lineStr}\"");
+            // LogInfo($"OnTextDocumentCompletion: lineStr: \"{lineStr}\"");
 
             int pos = parameter.Position.Character - 1;
             char currentChar = GetChar(lineStr, pos);
-            //LogInfo($"OnTextDocumentCompletion: currentChar={currentChar}");
+            // LogInfo($"OnTextDocumentCompletion: currentChar={currentChar}");
 
             if (AsmTools.AsmSourceTools.IsSeparatorChar(currentChar))
             {
                 return new CompletionList();
             }
             (string label, Mnemonic mnemonic, string[] args, string remark) = AsmTools.AsmSourceTools.ParseLine(lineStr);
-
             LogInfo($"OnTextDocumentCompletion: label={label}; mnemonic={mnemonic}; args={args}; remark={remark}");
 
-            List<CompletionItem> items = new List<CompletionItem>();
+            List<CompletionItem> items = new();
 
             if (remark.Length > 0)
             {
                 // do not recommend anything while typing comments
-            } else
+            }
+            else
             {
+                (string currentWord, _, _) = GetWord(pos, lineStr);
+                bool useCapitals = (currentWord == currentWord.ToUpper());
+
                 if (mnemonic == Mnemonic.NONE)
                 {
                     ISet<AsmTokenType> selected1 = new HashSet<AsmTokenType> { AsmTokenType.Directive, AsmTokenType.Jump, AsmTokenType.Misc, AsmTokenType.Mnemonic };
-                    bool useCapitals = true; //TODO
                     items.AddRange(Selected_Completions(useCapitals, selected1, true));
                 }
                 else
@@ -1124,12 +1180,13 @@ namespace AsmDude2LS
                     // the line contains a mnemonic but we are not in a comment
                     if (AsmTools.AsmSourceTools.IsJump(mnemonic))
                     {
-                        //TODO select labels
-                    } else
+                        // TODO select labels
+                    }
+                    else
                     {
                         IList<Operand> operands = AsmTools.AsmSourceTools.MakeOperands(args);
                         ISet<Arch> selectedArchitectures = this.options.Get_Arch_Switched_On();
-                        ISet<AsmSignatureEnum> allowed = new HashSet<AsmSignatureEnum>();
+                        HashSet<AsmSignatureEnum> allowed = new();
                         int nCommas = operands.Count;
 
                         IEnumerable<AsmSignatureInformation> allSignatures = this.mnemonicStore.GetSignatures(mnemonic);
@@ -1144,7 +1201,6 @@ namespace AsmDude2LS
                                 }
                             }
                         }
-                        bool useCapitals = true; //TODO
                         IEnumerable<CompletionItem> completions = this.Mnemonic_Operand_Completions(useCapitals, allowed, parameter.Position.Line);
                         if (completions.Any())
                         {
@@ -1161,7 +1217,7 @@ namespace AsmDude2LS
             };
         }
 
-        public DocumentHighlight[] GetDocumentHighlights(IProgress<DocumentHighlight[]> progress, Position position, CancellationToken token, Uri uri)
+        public DocumentHighlight[] GetDocumentHighlights(IProgress<DocumentHighlight[]> progress, Position position, Uri uri, CancellationToken token)
         {
             if (progress == null)
             {
@@ -1197,7 +1253,8 @@ namespace AsmDude2LS
             if (reg == Rn.NOREG)
             {
                 currentHighlightedWords.Add(currentHighlightedWord);
-            } else
+            }
+            else
             {
                 foreach (string x in RegisterTools.GetRelatedRegisterNew(reg))
                 {
@@ -1206,8 +1263,8 @@ namespace AsmDude2LS
             }
             LogInfo($"LanguageServer:GetDocumentHighlights: currentHighlightedWords={string.Join(",", currentHighlightedWords)}");
 
-            List<DocumentHighlight> highlights = new List<DocumentHighlight>();
-            List<DocumentHighlight> chunk = new List<DocumentHighlight>();
+            List<DocumentHighlight> highlights = new();
+            List<DocumentHighlight> chunk = new();
 
             for (int i = 0; i < lines.Length; i++)
             {
@@ -1219,9 +1276,10 @@ namespace AsmDude2LS
                     if (range != null)
                     {
                         j++;
-                        DocumentHighlight highlight = new DocumentHighlight() { 
-                            Range = range, 
-                            Kind = DocumentHighlightKind.Text 
+                        DocumentHighlight highlight = new()
+                        {
+                            Range = range,
+                            Kind = DocumentHighlightKind.Text
                         };
                         highlights.Add(highlight);
                         chunk.Add(highlight);
@@ -1238,7 +1296,7 @@ namespace AsmDude2LS
             }
 
             // Report last chunk if it has elements since it didn't reached the specified size
-            if (chunk.Count() > 0)
+            if (chunk.Count > 0)
             {
                 progress.Report(chunk.ToArray());
             }
@@ -1246,45 +1304,9 @@ namespace AsmDude2LS
             return highlights.ToArray();
         }
 
-        private (int, int) FindWordBoundary(int position, string lineStr)
+        private AsmTokenType GetAsmTokenType(string keyword_uppercase)
         {
-            LogInfo($"FindWordBoundary: position = {position}; lineStr=\"{lineStr}\"");
-            int lineLength = lineStr.Length;
-            if (position >= lineLength)
-            {
-                return (-1, -1);
-            }
-            if (AsmTools.AsmSourceTools.IsSeparatorChar(lineStr[position]))
-            {
-                return (-1, -1);
-            }
-
-            int startPos = 0;
-            int endPos = lineLength;
-            char[] lineChars = lineStr.ToCharArray(0, lineLength);
-
-            for (int i = position+1; i < lineLength; ++i)
-            {
-                if (AsmTools.AsmSourceTools.IsSeparatorChar(lineChars[i]))
-                {
-                    endPos = i;
-                    break;
-                }
-            }
-            for (int i = position; i >= 0; --i)
-            {
-                if (AsmTools.AsmSourceTools.IsSeparatorChar(lineChars[i]))
-                {
-                    startPos = i + 1;
-                    break;
-                }
-            }
-            return (startPos, endPos);
-        }
-
-        private AsmTokenType GetAsmTokenType(string keyword_upcase)
-        {
-            Mnemonic mnemonic = AsmTools.AsmSourceTools.ParseMnemonic(keyword_upcase, true);
+            Mnemonic mnemonic = AsmTools.AsmSourceTools.ParseMnemonic(keyword_uppercase, true);
             if (mnemonic != Mnemonic.NONE)
             {
                 if (AsmTools.AsmSourceTools.IsJump(mnemonic))
@@ -1293,7 +1315,7 @@ namespace AsmDude2LS
                 }
                 return AsmTokenType.Mnemonic;
             }
-            if (RegisterTools.IsRn(keyword_upcase))
+            if (RegisterTools.IsRn(keyword_uppercase))
             {
                 return AsmTokenType.Register;
             }
@@ -1301,18 +1323,6 @@ namespace AsmDude2LS
             //TODO labels and constants
 
             return AsmTokenType.UNKNOWN;
-        }
-
-        private (string, int, int) GetWord(int pos, string lineStr)
-        {
-            (int startPos, int endPos) = FindWordBoundary(pos, lineStr);
-            int length = endPos - startPos;
-
-            if (length <= 0)
-            {
-                return (String.Empty, -1, -1);
-            }
-            return (lineStr.Substring(startPos, length), startPos, endPos);
         }
 
         public Hover GetHover(TextDocumentPositionParams parameter)
@@ -1407,7 +1417,7 @@ namespace AsmDude2LS
                     }
                 case AsmTokenType.Register:
                     {
-                       // int lineNumber = //AsmTools.AsmDudeToolsStatic.Get_LineNumber(tagSpan);
+                        // int lineNumber = //AsmTools.AsmDudeToolsStatic.Get_LineNumber(tagSpan);
                         if (keyword_upcase.StartsWith("%", StringComparison.Ordinal))
                         {
                             keyword_upcase = keyword_upcase.Substring(1); // remove the preceding % in AT&T syntax
@@ -1562,7 +1572,7 @@ namespace AsmDude2LS
                         description.Inlines.Add(Make_Run1("User defined 1: ", foreground));
                         description.Inlines.Add(Make_Run2(keyword, new SolidColorBrush(AsmDudeToolsStatic.ConvertColor(AsmDude.Settings.Default.SyntaxHighlighting_Userdefined1))));
 
-                        string descr = this.asmDudeTools_.Get_Description(keyword_upcase);
+                        string descr = this.asmDudeTools_.Get_Description(keyword_uppercase);
                         if (descr.Length > 0)
                         {
                             if (keyword.Length > (AsmDudePackage.MaxNumberOfCharsInToolTips / 2))
@@ -1583,7 +1593,7 @@ namespace AsmDude2LS
                         description.Inlines.Add(Make_Run1("User defined 2: ", foreground));
                         description.Inlines.Add(Make_Run2(keyword, new SolidColorBrush(AsmDudeToolsStatic.ConvertColor(AsmDude.Settings.Default.SyntaxHighlighting_Userdefined2))));
 
-                        string descr = this.asmDudeTools_.Get_Description(keyword_upcase);
+                        string descr = this.asmDudeTools_.Get_Description(keyword_uppercase);
                         if (descr.Length > 0)
                         {
                             if (keyword.Length > (AsmDudePackage.MaxNumberOfCharsInToolTips / 2))
@@ -1604,7 +1614,7 @@ namespace AsmDude2LS
                         description.Inlines.Add(Make_Run1("User defined 3: ", foreground));
                         description.Inlines.Add(Make_Run2(keyword, new SolidColorBrush(AsmDudeToolsStatic.ConvertColor(AsmDude.Settings.Default.SyntaxHighlighting_Userdefined3))));
 
-                        string descr = this.asmDudeTools_.Get_Description(keyword_upcase);
+                        string descr = this.asmDudeTools_.Get_Description(keyword_uppercase);
                         if (descr.Length > 0)
                         {
                             if (keyword.Length > (AsmDudePackage.MaxNumberOfCharsInToolTips / 2))
@@ -1689,7 +1699,7 @@ namespace AsmDude2LS
                                 End = new Position
                                 {
                                     Line = line,
-                                    Character = pos+label.Length,
+                                    Character = pos + label.Length,
                                 }
                             }
                         },
@@ -1750,7 +1760,7 @@ namespace AsmDude2LS
 
         public VSProjectContextList GetProjectContexts()
         {
-            VSProjectContextList result = new VSProjectContextList
+            VSProjectContextList result = new()
             {
                 ProjectContexts = this.Contexts.ToArray(),
                 DefaultIndex = 0
@@ -1761,13 +1771,13 @@ namespace AsmDude2LS
 
         CompletionItemKind GetCompletionItemKind(AsmTokenType type)
         {
-            switch (type)
+            return type switch
             {
-                case AsmTokenType.Directive: return CompletionItemKind.Value;
-                case AsmTokenType.Register: return CompletionItemKind.Variable;
-                case AsmTokenType.Misc: return CompletionItemKind.Struct;
-                default: return CompletionItemKind.None;
-            }
+                AsmTokenType.Directive => CompletionItemKind.Value,
+                AsmTokenType.Register => CompletionItemKind.Variable,
+                AsmTokenType.Misc => CompletionItemKind.Struct,
+                _ => CompletionItemKind.None,
+            };
         }
 
         #region Logging
@@ -1812,7 +1822,7 @@ namespace AsmDude2LS
         public void ShowMessage(string message, MessageType messageType)
         {
             LogInfo($"LanguageServer: ShowMessage: message={message}; messageType={messageType.ToString()}");
-            ShowMessageParams parameter = new ShowMessageParams
+            ShowMessageParams parameter = new()
             {
                 Message = message,
                 MessageType = messageType
@@ -1822,7 +1832,7 @@ namespace AsmDude2LS
 
         public async Task<MessageActionItem> ShowMessageRequestAsync(string message, MessageType messageType, string[] actionItems)
         {
-            ShowMessageRequestParams parameter = new ShowMessageRequestParams
+            ShowMessageRequestParams parameter = new()
             {
                 Message = message,
                 MessageType = messageType,
@@ -1943,7 +1953,7 @@ namespace AsmDude2LS
             if ((characterOffset + wordLength) <= lineStr.Length)
             {
                 char before = GetChar(lineStr, characterOffset - 1);
-                char after = GetChar(lineStr, characterOffset +  wordLength);
+                char after = GetChar(lineStr, characterOffset + wordLength);
 
                 if (!AsmTools.AsmSourceTools.IsSeparatorChar(before) || !AsmTools.AsmSourceTools.IsSeparatorChar(after))
                 {
@@ -1997,6 +2007,7 @@ namespace AsmDude2LS
         }
     }
 
+    /*
     public class DiagnosticsInfo
     {
         public DiagnosticsInfo(string Text, VSProjectContext context, DiagnosticTag tag, DiagnosticSeverity severity)
@@ -2031,6 +2042,8 @@ namespace AsmDude2LS
             set;
         }
     }
+
+    */
 
     public class SymbolInfo
     {

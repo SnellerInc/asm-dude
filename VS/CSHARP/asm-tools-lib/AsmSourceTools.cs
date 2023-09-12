@@ -135,6 +135,9 @@ namespace AsmTools
             Contract.Ensures(label != null);
             Contract.Ensures(args != null);
             Contract.Ensures(remark != null);
+            Contract.Assume(label != null);
+            Contract.Assume(args != null);
+            Contract.Assume(remark != null);
             return (label, mnemonic, args, remark);
         }
 
@@ -151,7 +154,7 @@ namespace AsmTools
             else
             {
                 nOperands--;
-                IList<Operand> operands = new List<Operand>(nOperands);
+                List<Operand> operands = new List<Operand>(nOperands);
                 for (int i = 0; i < nOperands; ++i)
                 {
                     string opStr = operandStrArray[i];
@@ -498,7 +501,7 @@ namespace AsmTools
             int length = token.Length;
             if (length < 3)
             {
-                return (valid: false, baseReg: Rn.NOREG, indexReg: Rn.NOREG, scale: 0, displacement: 0, nBits: 0, errorMessage: null); // do not return a error message because the provided token can be a label
+                return (valid: false, baseReg: Rn.NOREG, indexReg: Rn.NOREG, scale: 0, displacement: 0, nBits: 0, errorMessage: string.Empty); // do not return a error message because the provided token can be a label
             }
 
             if (!isCapitals)
@@ -533,7 +536,7 @@ namespace AsmTools
             length = token.Length;
             if (length == 0)
             {
-                return (valid: false, baseReg: Rn.NOREG, indexReg: Rn.NOREG, scale: 0, displacement: 0, nBits: 0, errorMessage: null); // do not return a error message because the provided token can be a label
+                return (valid: false, baseReg: Rn.NOREG, indexReg: Rn.NOREG, scale: 0, displacement: 0, nBits: 0, errorMessage: string.Empty); // do not return a error message because the provided token can be a label
             }
 
             // 2] check if the displacement is negative
@@ -631,7 +634,7 @@ namespace AsmTools
                     return (valid: false, baseReg: Rn.NOREG, indexReg: Rn.NOREG, scale: 0, displacement: 0, nBits: 0, errorMessage: "Number of bits of base register " + baseRn + " is not equal to number of bits of index register " + indexRn);
                 }
             }
-            return (valid: true, baseReg: baseRn, indexReg: indexRn, scale, displacement, nBits, errorMessage: null);
+            return (valid: true, baseReg: baseRn, indexReg: indexRn, scale, displacement, nBits, errorMessage: string.Empty);
 
             #region Local Methods
             int ParseScale(string str)

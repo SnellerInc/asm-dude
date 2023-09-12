@@ -47,9 +47,6 @@
     <Setting Name="AsmDoc_On" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">True</Value>
     </Setting>
-    <Setting Name="CodeFolding_IsDefaultCollapsed" Type="System.Boolean" Scope="User">
-      <Value Profile="(Default)">True</Value>
-    </Setting>
     <Setting Name="useAssemblerMasm" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">True</Value>
     </Setting>
@@ -412,9 +409,6 @@
     </Setting>
     <Setting Name="PerformanceInfo_SkylakeX_On" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">True</Value>
-    </Setting>
-    <Setting Name="PerformanceInfo_IsDefaultCollapsed" Type="System.Boolean" Scope="User">
-      <Value Profile="(Default)">False</Value>
     </Setting>
     <Setting Name="PerformanceInfo_On" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">True</Value>

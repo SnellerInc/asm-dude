@@ -7,7 +7,7 @@
 		<OutputType>Library</OutputType>
 		<OutputSubPath>MockLSPs\MockLanguageExtension</OutputSubPath>
 		<UseCodebase>true</UseCodebase>
-		<NoWarn>CA1001,CA1052,CA1507,CA1812,CA2007,CS1591,NU1605,VSTHRD100</NoWarn>
+		<NoWarn>CA1001,CA1052,CA1507,CA1812,CA2007,CS1591,NU1605,NU5100,VSTHRD100</NoWarn>
 		<AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
 		<GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
 
@@ -64,7 +64,13 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+	  <Content Remove="C:\Users\henkj\.nuget\packages\microsoft.vssdk.buildtools\17.7.2196\contentFiles\any\net472\LICENSE_SDKOOB.txt" />
+	  <Content Remove="C:\Users\henkj\.nuget\packages\microsoft.vssdk.buildtools\17.7.2196\contentFiles\any\net472\vsextensibilityicon.png" />
+	</ItemGroup>
+
+	<ItemGroup>
 	  <None Remove="AsmDude2.png" />
+	  <None Remove="C:\Users\henkj\.nuget\packages\microsoft.vssdk.buildtools\17.7.2196\contentFiles\any\net472\NOTICE.txt" />
 	  <None Remove="OptionsPage\AsmDudeOptionPageUI.xaml" />
 	</ItemGroup>
 
@@ -140,6 +146,9 @@
 	    <Generator>SettingsSingleFileGenerator</Generator>
 	    <LastGenOutput>Settings.Designer.cs</LastGenOutput>
 	  </None>
+	</ItemGroup>
+	<ItemGroup>
+	  <Folder Include="vsix\" />
 	</ItemGroup>
 
 	<Target Name="IncludeLanguageServers" BeforeTargets="GetVsixSourceItems">

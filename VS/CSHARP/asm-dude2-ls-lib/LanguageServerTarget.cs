@@ -21,22 +21,16 @@
 // SOFTWARE.
 
 using AsmTools;
-
 using Microsoft.CodeAnalysis;
 using Microsoft.VisualStudio.LanguageServer.Protocol;
-
 using Newtonsoft.Json.Linq;
-
 using StreamJsonRpc;
-
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.Contracts;
-using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading;
 
@@ -71,27 +65,6 @@ namespace AsmDude2LS
 
         public event EventHandler OnInitialized;
 
-        //public bool SuggestionMode
-        //{
-        //    get;
-        //    set;
-        //} = false;
-
-        //public bool IsIncomplete
-        //{
-        //    get;
-        //    set;
-        //} = false;
-
-        //public bool CompletionServerError
-        //{
-        //    get;
-        //    set;
-        //} = false;
-
-        //public bool ServerCommitCharacters { get; internal set; } = true;
-        //public bool ItemCommitCharacters { get; internal set; } = false;
-
         private void LogInfo(string message)
         {
             if (this.traceSetting == TraceSetting.Verbose) {
@@ -116,6 +89,11 @@ namespace AsmDude2LS
             AsmLanguageServerOptions options = (parameter.InitializationOptions as JToken).ToObject<AsmLanguageServerOptions>();
 
             this.server.Initialize(options);
+
+            const char backspace = (char)8;
+            string backspaceStr = backspace + string.Empty;
+
+
             var result = new InitializeResult
             {
                 Capabilities = new VSServerCapabilities
@@ -127,14 +105,14 @@ namespace AsmDude2LS
                     },
                     CompletionProvider = new CompletionOptions
                     {
-                        TriggerCharacters = new string[] { },
+                        TriggerCharacters = new string[] { backspaceStr },
                         AllCommitCharacters = new string[] { "\t" },
                         ResolveProvider = false,
                         WorkDoneProgress = false,
                     },
                     SignatureHelpProvider = new SignatureHelpOptions()
                     {
-                        TriggerCharacters = new string[] { " ", "," },
+                        TriggerCharacters = new string[] { " ", ",", backspaceStr },
                         RetriggerCharacters = new string[] { "," },                       
                         WorkDoneProgress = false,
                     },
@@ -444,14 +422,14 @@ namespace AsmDude2LS
         public DocumentHighlight[] GetDocumentHighlights(DocumentHighlightParams arg, CancellationToken token)
         {
             LogInfo($"GetDocumentHighlights: Received: {JToken.FromObject(arg)}");
-            var result = this.server.GetDocumentHighlights(arg.PartialResultToken, arg.Position, token, arg.TextDocument.Uri);
+            var result = this.server.GetDocumentHighlights(arg.PartialResultToken, arg.Position, arg.TextDocument.Uri, token);
             LogInfo($"GetDocumentHighlights: Sent: {JToken.FromObject(result)}");
             return result;
         }
 
         public Range[] GetWordRangesInText(string fullText, string word)
         {
-            List<Range> ranges = new List<Range>();
+            List<Range> ranges = new();
             string[] textLines = fullText.Split(new string[] { Environment.NewLine }, StringSplitOptions.None);
             for (int i = 0; i < textLines.Length; i++)
             {

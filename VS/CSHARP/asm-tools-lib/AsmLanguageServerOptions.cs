@@ -67,8 +67,6 @@ namespace AsmTools
         [DataMember]
         public System.Drawing.Color KeywordHighlighting_BackgroundColor;
         [DataMember]
-        public bool CodeFolding_IsDefaultCollapsed;
-        [DataMember]
         public bool useAssemblerMasm;
         [DataMember]
         public bool useAssemblerNasm;
@@ -314,8 +312,6 @@ namespace AsmTools
         public bool ARCH_SGX2;
         [DataMember]
         public bool PerformanceInfo_SkylakeX_On;
-        [DataMember]
-        public bool PerformanceInfo_IsDefaultCollapsed;
         [DataMember]
         public bool PerformanceInfo_On;
         [DataMember]
