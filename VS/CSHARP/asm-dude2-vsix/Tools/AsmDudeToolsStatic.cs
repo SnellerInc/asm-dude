@@ -205,14 +205,14 @@ namespace AsmDude2.Tools
 
             for (int i = 0; i < Math.Min(snapshot.LineCount, nLinesMax); ++i)
             {
-                string line_upcase = snapshot.GetLineFromLineNumber(i).GetText().ToUpperInvariant();
+                string line_uppercase = snapshot.GetLineFromLineNumber(i).GetText().ToUpperInvariant();
                 //AsmDudeToolsStatic.Output_INFO(string.Format(AsmDudeToolsStatic.CultureUI, "{0}:Guess_Masm_Syntax {1}:\"{2}\"", "AsmDudeToolsStatic", i, line_capitals));
 
-                List<string> keywords_upcase = AsmSourceTools.SplitIntoKeywordsList(line_upcase);
+                List<string> keywords_uppercase = AsmSourceTools.SplitIntoKeywordsList(line_uppercase);
 
-                foreach (string keyword_upcase in keywords_upcase)
+                foreach (string keyword_uppercase in keywords_uppercase)
                 {
-                    switch (keyword_upcase)
+                    switch (keyword_uppercase)
                     {
                         case "PTR":
                         case "@B":

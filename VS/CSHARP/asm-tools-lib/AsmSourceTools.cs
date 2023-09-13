@@ -75,15 +75,15 @@ namespace AsmTools
                     // Console.WriteLine("found remark " + remark);
                 }
 
-                string codeStr_upcase = line.Substring(codeBeginPos, codeEndPos - codeBeginPos).Trim().ToUpperInvariant();
+                string codeStr_uppercase = line.Substring(codeBeginPos, codeEndPos - codeBeginPos).Trim().ToUpperInvariant();
                 // Console.WriteLine("code string \"" + codeStr + "\".");
-                if (codeStr_upcase.Length > 0)
+                if (codeStr_uppercase.Length > 0)
                 {
                     // Console.WriteLine(codeStr + ":" + codeStr.Length);
 
                     // get the first keyword, check if it is a mnemonic
-                    (int beginPos, int endPos) keyword1Pos = GetKeywordPos(0, codeStr_upcase); // find a keyword starting a position 0
-                    string keyword1 = codeStr_upcase.Substring(keyword1Pos.beginPos, keyword1Pos.endPos - keyword1Pos.beginPos);
+                    (int beginPos, int endPos) keyword1Pos = GetKeywordPos(0, codeStr_uppercase); // find a keyword starting a position 0
+                    string keyword1 = codeStr_uppercase.Substring(keyword1Pos.beginPos, keyword1Pos.endPos - keyword1Pos.beginPos);
                     if (keyword1.Length > 0)
                     {
                         int startArgPos = keyword1Pos.endPos;
@@ -98,8 +98,8 @@ namespace AsmTools
                             case Mnemonic.REPNZ:
                                 {
                                     // find a second keyword starting a postion keywordPos.EndPos
-                                    (int beginPos, int endPos) keyword2Pos = GetKeywordPos(keyword1Pos.endPos + 1, codeStr_upcase); // find a keyword starting a position 0
-                                    string keyword2 = codeStr_upcase.Substring(keyword2Pos.beginPos, keyword2Pos.endPos - keyword2Pos.beginPos);
+                                    (int beginPos, int endPos) keyword2Pos = GetKeywordPos(keyword1Pos.endPos + 1, codeStr_uppercase); // find a keyword starting a position 0
+                                    string keyword2 = codeStr_uppercase.Substring(keyword2Pos.beginPos, keyword2Pos.endPos - keyword2Pos.beginPos);
                                     if (keyword2.Length > 0)
                                     {
                                         Mnemonic mnemonic2 = ParseMnemonic(keyword2, true);
@@ -115,9 +115,9 @@ namespace AsmTools
                         }
 
                         // find arguments after the last mnemonic
-                        if (codeStr_upcase.Length > 0)
+                        if (codeStr_uppercase.Length > 0)
                         {
-                            string argsStr = codeStr_upcase.Substring(startArgPos, codeStr_upcase.Length - startArgPos);
+                            string argsStr = codeStr_uppercase.Substring(startArgPos, codeStr_uppercase.Length - startArgPos);
                             if (argsStr.Length > 0)
                             {
                                 args = argsStr.Split(',');
@@ -167,7 +167,7 @@ namespace AsmTools
         /// <summary>
         /// return label definition position
         /// </summary>
-        public static (int beginPos, int length, bool isLabel) Get_First_Keyword(string line)
+        public static (int beginPos, int length, AsmTokenType type) Get_First_Keyword(string line)
         {
             Contract.Requires(line != null);
             Contract.Assume(line != null);
@@ -180,30 +180,30 @@ namespace AsmTools
                 char c = line[i];
                 if (IsRemarkChar(c))
                 {
-                    return (beginPos: 0, length: 0, isLabel: false);
+                    return (beginPos: 0, length: 0, AsmTokenType.Remark);
                 }
 
                 if (c.Equals('"'))
                 {
-                    return (beginPos: 0, length: 0, isLabel: false);
+                    return (beginPos: 0, length: 0, AsmTokenType.Constant);
                 }
 
                 if (c.Equals(':'))
                 {
                     if (started)
                     {
-                        return (beginPos: keywordBegin, length: i, isLabel: true);
+                        return (beginPos: keywordBegin, length: i, AsmTokenType.LabelDef);
                     }
                     else
                     {
-                        return (beginPos: 0, length: 0, isLabel: false);
+                        return (beginPos: 0, length: 0, AsmTokenType.UNKNOWN);
                     }
                 }
                 else if (IsSeparatorChar(c))
                 {
                     if (started)
                     {
-                        return (beginPos: keywordBegin, length: i, isLabel: false);
+                        return (beginPos: keywordBegin, length: i, AsmTokenType.UNKNOWN);
                     }
                     else
                     {
@@ -215,13 +215,13 @@ namespace AsmTools
                     started = true;
                 }
             }
-            return (beginPos: 0, length: 0, isLabel: false);
+            return (beginPos: 0, length: 0, AsmTokenType.UNKNOWN);
         }
 
         /// <summary>
-        /// Split the provided line into keyword positions: first: begin pos; second: end pos; third whether the keyword is a label
+        /// split the provided line into keywords, and if the type is already known return the type.
         /// </summary>
-        public static IEnumerable<(int beginPos, int length, bool isLabel)> SplitIntoKeywordPos(string line)
+        public static IEnumerable<(int beginPos, int length, AsmTokenType type)> SplitIntoKeywordsType(string line)
         {
             Contract.Requires(line != null);
             Contract.Assume(line != null);
@@ -241,7 +241,7 @@ namespace AsmTools
                         inStringDef = false;
                         if (keywordBegin < i)
                         {
-                            yield return (keywordBegin, i + 1, false);
+                            yield return (keywordBegin, i + 1, AsmTokenType.Constant);
                             isFirstKeyword = false;
                         }
                         keywordBegin = i + 1; // next keyword starts at the next char
@@ -253,17 +253,17 @@ namespace AsmTools
                     {
                         if (keywordBegin < i)
                         {
-                            yield return (keywordBegin, i, false);
+                            yield return (keywordBegin, i, AsmTokenType.UNKNOWN);
                             isFirstKeyword = false;
                         }
-                        yield return (i, line.Length, false);
+                        yield return (i, line.Length, AsmTokenType.Remark);
                         i = line.Length;
                     }
                     else if (c.Equals('"'))
                     { // start string definition
                         if (keywordBegin < i)
                         {
-                            yield return (keywordBegin, i, false);
+                            yield return (keywordBegin, i, AsmTokenType.UNKNOWN);
                             isFirstKeyword = false;
                         }
                         inStringDef = true;
@@ -278,16 +278,16 @@ namespace AsmTools
                             {
                                 if (isFirstKeyword)
                                 {
-                                    yield return (beginPos: keywordBegin, length: i, isLabel: true);
+                                    yield return (beginPos: keywordBegin, length: i, AsmTokenType.LabelDef);
                                 }
                                 else
                                 {
-                                    yield return (beginPos: keywordBegin, length: i, isLabel: false);
+                                    yield return (beginPos: keywordBegin, length: i, AsmTokenType.UNKNOWN);
                                 }
                             }
                             else
                             {
-                                yield return (beginPos: keywordBegin, length: i, isLabel: false);
+                                yield return (beginPos: keywordBegin, length: i, AsmTokenType.UNKNOWN);
                             }
                             isFirstKeyword = false;
                         }
@@ -298,21 +298,21 @@ namespace AsmTools
 
             if (keywordBegin < line.Length)
             {
-                yield return (beginPos: keywordBegin, length: line.Length, isLabel: false);
+                yield return (beginPos: keywordBegin, length: line.Length, AsmTokenType.UNKNOWN);
             }
         }
 
         public static List<string> SplitIntoKeywordsList(string line)
         {
             List<string> keywords = new List<string>();
-            foreach ((int beginPos, int length, bool isLabel) pos in SplitIntoKeywordPos(line))
+            foreach ((int beginPos, int length, AsmTokenType _) pos in SplitIntoKeywordsType(line))
             {
                 keywords.Add(Keyword(pos, line));
             }
             return keywords;
         }
 
-        public static string Keyword((int beginPos, int length, bool isLabel) pos, string line)
+        public static string Keyword((int beginPos, int length, AsmTokenType _) pos, string line)
         {
             Contract.Requires(line != null);
             Contract.Assume(line != null);

@@ -84,7 +84,7 @@ namespace AsmDude2
                 ITextSnapshotLine containingLine = curSpan.Start.GetContainingLine();
 
                 string line_upcase = containingLine.GetText().ToUpperInvariant();
-                List<(int beginPos, int length, bool isLabel)> pos = new List<(int beginPos, int length, bool isLabel)>(AsmSourceTools.SplitIntoKeywordPos(line_upcase));
+                var pos = new List<(int beginPos, int length, AsmTokenType type)>(AsmSourceTools.SplitIntoKeywordsType(line_upcase));
 
                 int offset = containingLine.Start.Position;
                 int nKeywords = pos.Count;
@@ -92,27 +92,28 @@ namespace AsmDude2
                 #region Check if the current line is a line of source code
                 if (IsSourceCode(line_upcase, pos))
                 {
-                    yield return new TagSpan<AsmTokenTag>(NasmIntelTokenTagger.New_Span((0, line_upcase.Length, false), offset, curSpan), this.remark_);
+                    yield return new TagSpan<AsmTokenTag>(NasmIntelTokenTagger.New_Span((0, line_upcase.Length, AsmTokenType.UNKNOWN), offset, curSpan), this.remark_);
                     continue; // go to the next line
                 }
                 #endregion
 
                 for (int k = 0; k < nKeywords; k++)
                 {
-                    string asmToken = AsmSourceTools.Keyword(pos[k], line_upcase);
                     // keyword starts with a remark char
-                    if (AsmSourceTools.IsRemarkChar(asmToken[0]))
+                    if (pos[k].type == AsmTokenType.Remark)
                     {
                         yield return new TagSpan<AsmTokenTag>(NasmIntelTokenTagger.New_Span(pos[k], offset, curSpan), this.remark_);
                         continue;
                     }
 
                     // keyword k is a label definition
-                    if (pos[k].isLabel)
+                    if (pos[k].type == AsmTokenType.LabelDef)
                     {
                         yield return new TagSpan<AsmTokenTag>(NasmIntelTokenTagger.New_Span(pos[k], offset, curSpan), this.labelDef_);
                         continue;
                     }
+
+                    string asmToken = AsmSourceTools.Keyword(pos[k], line_upcase);
 
                     AsmTokenType keywordType = this.asmDudeTools_.Get_Token_Type_Att(asmToken);
                     switch (keywordType)
@@ -237,7 +238,7 @@ namespace AsmDude2
             return false;
         }
 
-        private static bool IsSourceCode(string line, List<(int beginPos, int length, bool isLabel)> pos)
+        private static bool IsSourceCode(string line, List<(int beginPos, int length, AsmTokenType type)> pos)
         {
             //NOTE: line has only capitals
             if (pos.Count < 2)
@@ -261,17 +262,17 @@ namespace AsmDude2
                 }
             }
 
-            if (pos[0].isLabel)
+            if (pos[0].type == AsmTokenType.LabelDef)
             {
                 return false;
             }
 
-            foreach ((int beginPos, int length, bool isLabel) v in pos)
+            foreach ((int beginPos, int length, AsmTokenType _) v in pos)
             {
                 string word = AsmSourceTools.Keyword(v, line);
                 if (AsmSourceTools.IsMnemonic_Att(word, true))
                 {
-                    return false; // found an assebly instruction, think this is assembly code
+                    return false; // found an assembly instruction, think this is assembly code
                 }
             }
             return true;
@@ -281,12 +282,12 @@ namespace AsmDude2
 
         #region Public Static Methods
 
-        public static string Keyword((int beginPos, int length, bool isLabel) pos, string line)
+        public static string Keyword((int beginPos, int length, AsmTokenType _) pos, string line)
         {
             return line.Substring(pos.beginPos, pos.length - pos.beginPos);
         }
 
-        public static SnapshotSpan New_Span((int beginPos, int length, bool isLabel) pos, int offset, SnapshotSpan lineSnapShot)
+        public static SnapshotSpan New_Span((int beginPos, int length, AsmTokenType _) pos, int offset, SnapshotSpan lineSnapShot)
         {
             return new SnapshotSpan(lineSnapShot.Snapshot, new Span(pos.beginPos + offset, pos.length - pos.beginPos));
         }

@@ -90,24 +90,24 @@ namespace AsmDude2
                 ITextSnapshotLine containingLine = curSpan.Start.GetContainingLine();
 
                 string line_upcase = containingLine.GetText().ToUpperInvariant();
-                List<(int beginPos, int length, bool isLabel)> pos = new List<(int beginPos, int length, bool isLabel)>(AsmSourceTools.SplitIntoKeywordPos(line_upcase));
+                var pos = new List<(int beginPos, int length, AsmTokenType type)>(AsmSourceTools.SplitIntoKeywordsType(line_upcase));
 
                 int offset = containingLine.Start.Position;
                 int nKeywords = pos.Count;
 
                 for (int k = 0; k < nKeywords; k++)
                 {
-                    string keyword_upcase = AsmSourceTools.Keyword(pos[k], line_upcase);
-
                     // keyword starts with a remark char
-                    if (AsmSourceTools.IsRemarkChar(keyword_upcase[0]))
+                    if (pos[k].type == AsmTokenType.Remark)
                     {
                         yield return new TagSpan<AsmTokenTag>(New_Span(pos[k], offset, curSpan), this.remark_);
                         continue;
                     }
 
+                    string keyword_upcase = AsmSourceTools.Keyword(pos[k], line_upcase);
+
                     // keyword k is a label definition
-                    if (pos[k].isLabel)
+                    if (pos[k].type == AsmTokenType.LabelDef)
                     {
                         //AsmDudeToolsStatic.Output_INFO("NasmTokenTagger:GetTags: found label " +asmToken);
                         if (this.IsProperLabelDef(keyword_upcase, containingLine.LineNumber, out AsmTokenTag asmTokenTag))
@@ -339,7 +339,7 @@ namespace AsmDude2
             return (valid: false, nextTokenId: nextTokenId, tokenEndPos: nextLoc, tokenSting: string.Empty);
         }
 
-        public static SnapshotSpan New_Span((int beginPos, int length, bool isLabel) pos, int offset, SnapshotSpan lineSnapShot)
+        public static SnapshotSpan New_Span((int beginPos, int length, AsmTokenType _) pos, int offset, SnapshotSpan lineSnapShot)
         {
             return new SnapshotSpan(lineSnapShot.Snapshot, new Span(pos.beginPos + offset, pos.length - pos.beginPos));
         }
@@ -402,8 +402,11 @@ namespace AsmDude2
             for (int i = lineNumber - 1; i >= 0; --i)
             {
                 string line = this.buffer_.CurrentSnapshot.GetLineFromLineNumber(i).GetText();
-                IList<(int, int, bool)> pos = new List<(int, int, bool)>(AsmSourceTools.SplitIntoKeywordPos(line));
-                if ((pos.Count > 0) && !pos[0].Item3)
+                var pos = new List<(int, int, AsmTokenType type)>(AsmSourceTools.SplitIntoKeywordsType(line));
+
+                bool isLabel0 = pos[0].type == AsmTokenType.LabelDef;
+                
+                if ((pos.Count > 0) && !isLabel0)
                 {
                     string keyword_upcase = AsmSourceTools.Keyword(pos[0], line).ToUpperInvariant();
                     if (AsmSourceTools.IsMnemonic(keyword_upcase, true))
@@ -416,7 +419,9 @@ namespace AsmDude2
                         case "ENDSTRUC": return true;
                     }
                 }
-                if ((pos.Count > 1) && !pos[1].Item3)
+
+                bool isLabel1 = pos[1].type == AsmTokenType.LabelDef;
+                if ((pos.Count > 1) && !isLabel1)
                 {
                     string keyword_upcase = AsmSourceTools.Keyword(pos[1], line).ToUpperInvariant();
                     if (AsmSourceTools.IsMnemonic(keyword_upcase, true))
@@ -436,10 +441,10 @@ namespace AsmDude2
             for (int i = lineNumber - 1; i >= 0; --i)
             {
                 string line = this.buffer_.CurrentSnapshot.GetLineFromLineNumber(i).GetText();
-                (int, int, bool) pos = AsmSourceTools.Get_First_Keyword(line);
+                (int, int, AsmTokenType type) pos = AsmSourceTools.Get_First_Keyword(line);
                 string keywordString = AsmSourceTools.Keyword(pos, line);
 
-                if (pos.Item3)
+                if (pos.type == AsmTokenType.LabelDef)
                 {
                     if (!keywordString[0].Equals('.'))
                     {

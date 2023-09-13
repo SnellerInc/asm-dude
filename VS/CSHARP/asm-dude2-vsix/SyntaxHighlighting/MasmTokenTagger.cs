@@ -94,23 +94,23 @@ namespace AsmDude2
                 ITextSnapshotLine containingLine = curSpan.Start.GetContainingLine();
 
                 string line_upcase = containingLine.GetText().ToUpper(CultureInfo.InvariantCulture);
-                List<(int beginPos, int length, bool isLabel)> pos = new List<(int beginPos, int length, bool isLabel)>(AsmSourceTools.SplitIntoKeywordPos(line_upcase));
+                var pos = new List<(int beginPos, int length, AsmTokenType type)>(AsmSourceTools.SplitIntoKeywordsType(line_upcase));
 
                 int offset = containingLine.Start.Position;
                 int nKeywords = pos.Count;
 
                 for (int k = 0; k < nKeywords; k++)
                 {
-                    string asmToken = AsmSourceTools.Keyword(pos[k], line_upcase);
-                    // keyword starts with a remark char
-                    if (AsmSourceTools.IsRemarkChar(asmToken[0]))
+                    if (pos[k].type == AsmTokenType.Remark)
                     {
                         yield return new TagSpan<AsmTokenTag>(NasmIntelTokenTagger.New_Span(pos[k], offset, curSpan), this.remark_);
                         continue;
                     }
 
+                    string asmToken = AsmSourceTools.Keyword(pos[k], line_upcase);
+
                     // keyword k is a label definition
-                    if (pos[k].isLabel)
+                    if (pos[k].type == AsmTokenType.LabelDef)
                     {
                         SnapshotSpan labelDefSpan = NasmIntelTokenTagger.New_Span(pos[k], offset, curSpan);
                         //AsmDudeToolsStatic.Output_INFO("MasmTokenTagger:GetTags: found label " + asmToken +" at line "+containingLine.LineNumber);
@@ -346,7 +346,7 @@ namespace AsmDude2
 
                 string line_upcase = containingLine.GetText().ToUpper(CultureInfo.InvariantCulture);
                 int offset = containingLine.Start.Position;
-                IEnumerator<(int beginPos, int length, bool isLabel)> enumerator = AsmSourceTools.SplitIntoKeywordPos(line_upcase).GetEnumerator();
+                IEnumerator<(int beginPos, int length, AsmTokenType type)> enumerator = AsmSourceTools.SplitIntoKeywordsType(line_upcase).GetEnumerator();
 
                 bool needToAdvance = false;
                 bool hasNext = enumerator.MoveNext();
@@ -355,21 +355,21 @@ namespace AsmDude2
                     break;
                 }
 
-                (int beginPos, int length, bool isLabel) prev = (0, 0, false);
-                (int beginPos, int length, bool isLabel) current = enumerator.Current;
+                (int beginPos, int length, AsmTokenType typel) prev = (0, 0, AsmTokenType.UNKNOWN);
+                (int beginPos, int length, AsmTokenType type) current = enumerator.Current;
 
                 while (hasNext)
                 {
-                    string asmToken = AsmSourceTools.Keyword(current, line_upcase);
-                    // keyword starts with a remark char
-                    if (AsmSourceTools.IsRemarkChar(asmToken[0]))
+                    if (current.type == AsmTokenType.Remark)
                     {
                         yield return new TagSpan<AsmTokenTag>(NasmIntelTokenTagger.New_Span(current, offset, curSpan), this.remark_);
                         continue;
                     }
 
+                    string asmToken = AsmSourceTools.Keyword(current, line_upcase);
+
                     // keyword k is a label definition
-                    if (current.isLabel)
+                    if (current.type == AsmTokenType.LabelDef)
                     {
                         SnapshotSpan labelDefSpan = NasmIntelTokenTagger.New_Span(current, offset, curSpan);
                         //AsmDudeToolsStatic.Output_INFO("MasmTokenTagger:GetTags: found label " + asmToken +" at line "+containingLine.LineNumber);
@@ -594,11 +594,11 @@ namespace AsmDude2
             for (int i = lineNumber; i >= 0; --i)
             {
                 string line = this.buffer_.CurrentSnapshot.GetLineFromLineNumber(i).GetText();
-                IList<(int, int, bool)> positions = new List<(int, int, bool)>(AsmSourceTools.SplitIntoKeywordPos(line));
+                var positions = new List<(int, int, AsmTokenType)>(AsmSourceTools.SplitIntoKeywordsType(line));
                 if (positions.Count > 1)
                 {
-                    string keywordStr_upcase = AsmSourceTools.Keyword(positions[1], line).ToUpperInvariant();
-                    switch (keywordStr_upcase)
+                    string keywordStr_uppercase = AsmSourceTools.Keyword(positions[1], line).ToUpperInvariant();
+                    switch (keywordStr_uppercase)
                     {
                         case "PROC": return AsmSourceTools.Keyword(positions[0], line);
                         case "ENDP": return null;

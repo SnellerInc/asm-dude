@@ -89,25 +89,25 @@ namespace AsmDude2
             {
                 ITextSnapshotLine containingLine = curSpan.Start.GetContainingLine();
 
-                string line_upcase = containingLine.GetText().ToUpperInvariant();
-                List<(int beginPos, int length, bool isLabel)> pos = new List<(int beginPos, int length, bool isLabel)>(AsmSourceTools.SplitIntoKeywordPos(line_upcase));
+                string line_uppercase = containingLine.GetText().ToUpperInvariant();
+                var pos = new List<(int beginPos, int length, AsmTokenType type)>(AsmSourceTools.SplitIntoKeywordsType(line_uppercase));
 
                 int offset = containingLine.Start.Position;
                 int nKeywords = pos.Count;
 
                 for (int k = 0; k < nKeywords; k++)
                 {
-                    string asmToken = AsmSourceTools.Keyword(pos[k], line_upcase);
-
                     // keyword starts with a remark char
-                    if (AsmSourceTools.IsRemarkChar(asmToken[0]))
+                    if (pos[k].type == AsmTokenType.Remark)
                     {
                         yield return new TagSpan<AsmTokenTag>(NasmIntelTokenTagger.New_Span(pos[k], offset, curSpan), this.remark_);
                         continue;
                     }
 
+                    string asmToken = AsmSourceTools.Keyword(pos[k], line_uppercase);
+
                     // keyword k is a label definition
-                    if (pos[k].isLabel)
+                    if (pos[k].type == AsmTokenType.LabelDef)
                     {
                         //AsmDudeToolsStatic.Output_INFO("NasmTokenTagger:GetTags: found label " +asmToken);
                         if (this.IsProperLabelDef(asmToken, containingLine.LineNumber, out AsmTokenTag asmTokenTag))
@@ -130,7 +130,7 @@ namespace AsmDude2
                                     //TODO HJ 01-06-19 should be a warning that there is no label
                                 }
 
-                                string asmToken2 = AsmSourceTools.Keyword(pos[k], line_upcase);
+                                string asmToken2 = AsmSourceTools.Keyword(pos[k], line_uppercase);
 
                                 if (AsmSourceTools.IsRemarkChar(asmToken2[0]))
                                 {
@@ -155,7 +155,7 @@ namespace AsmDude2
                                                 break;
                                             }
 
-                                            string asmToken3 = AsmSourceTools.Keyword(pos[k], line_upcase);
+                                            string asmToken3 = AsmSourceTools.Keyword(pos[k], line_uppercase);
                                             if (asmToken3.Equals("PTR", StringComparison.Ordinal))
                                             {
                                                 yield return new TagSpan<AsmTokenTag>(New_Span(pos[k], offset, curSpan), this.misc_);
@@ -210,7 +210,7 @@ namespace AsmDude2
                                     if ((k + 1) < nKeywords)
                                     {
                                         k++;
-                                        string nextKeyword = AsmSourceTools.Keyword(pos[k], line_upcase);
+                                        string nextKeyword = AsmSourceTools.Keyword(pos[k], line_uppercase);
                                         switch (nextKeyword)
                                         {
                                             case "LABEL":
@@ -231,7 +231,7 @@ namespace AsmDude2
                                     // do one word look back; see whether we can understand the current unknown word
                                     if (k > 0)
                                     {
-                                        string previousKeyword = AsmSourceTools.Keyword(pos[k - 1], line_upcase);
+                                        string previousKeyword = AsmSourceTools.Keyword(pos[k - 1], line_uppercase);
                                         switch (previousKeyword)
                                         {
                                             case "ALIAS":
@@ -261,8 +261,8 @@ namespace AsmDude2
                             }
                         case AsmTokenType.Directive:
                             {
-                                AssemblerEnum assember = this.asmDudeTools_.Get_Assembler(asmToken);
-                                if (assember.HasFlag(AssemblerEnum.NASM_INTEL) || assember.HasFlag(AssemblerEnum.NASM_ATT))
+                                AssemblerEnum assembler = this.asmDudeTools_.Get_Assembler(asmToken);
+                                if (assembler.HasFlag(AssemblerEnum.NASM_INTEL) || assembler.HasFlag(AssemblerEnum.NASM_ATT))
                                 {
                                     yield return new TagSpan<AsmTokenTag>(NasmIntelTokenTagger.New_Span(pos[k], offset, curSpan), this.directive_);
                                 }
@@ -340,13 +340,13 @@ namespace AsmDude2
             return (valid: false, nextTokenId: nextTokenId, tokenEndPos: nextLoc, tokenSting: string.Empty);
         }
 
-        public static string Keyword((int beginPos, int length, bool isLabel) pos, string line)
+        public static string Keyword((int beginPos, int length, AsmTokenType _) pos, string line)
         {
             Contract.Requires(line != null);
             return line.Substring(pos.beginPos, pos.length - pos.beginPos);
         }
 
-        public static SnapshotSpan New_Span((int beginPos, int length, bool isLabel) pos, int offset, SnapshotSpan lineSnapShot)
+        public static SnapshotSpan New_Span((int beginPos, int length, AsmTokenType _) pos, int offset, SnapshotSpan lineSnapShot)
         {
             Contract.Requires(lineSnapShot != null);
             return new SnapshotSpan(lineSnapShot.Snapshot, new Span(pos.beginPos + offset, pos.length - pos.beginPos));
@@ -410,8 +410,10 @@ namespace AsmDude2
             for (int i = lineNumber - 1; i >= 0; --i)
             {
                 string line_upcase = this.buffer_.CurrentSnapshot.GetLineFromLineNumber(i).GetText().ToUpperInvariant();
-                IList<(int, int, bool)> pos = new List<(int, int, bool)>(AsmSourceTools.SplitIntoKeywordPos(line_upcase));
-                if ((pos.Count > 0) && !pos[0].Item3)
+                var pos = new List<(int, int, AsmTokenType type)>(AsmSourceTools.SplitIntoKeywordsType(line_upcase));
+
+                bool isLabel0 = pos[0].type == AsmTokenType.LabelDef;                
+                if ((pos.Count > 0) && !isLabel0)
                 {
                     string keyword_upcase = AsmSourceTools.Keyword(pos[0], line_upcase);
                     if (AsmSourceTools.IsMnemonic(keyword_upcase, true))
@@ -424,7 +426,8 @@ namespace AsmDude2
                         case "ENDSTRUC": return true;
                     }
                 }
-                if ((pos.Count > 1) && !pos[1].Item3)
+                bool isLabel1 = pos[1].type == AsmTokenType.LabelDef;
+                if ((pos.Count > 1) && !isLabel1)
                 {
                     string keywordString = AsmSourceTools.Keyword(pos[1], line_upcase);
                     if (AsmSourceTools.IsMnemonic(keywordString, true))
@@ -444,10 +447,10 @@ namespace AsmDude2
             for (int i = lineNumber - 1; i >= 0; --i)
             {
                 string line = this.buffer_.CurrentSnapshot.GetLineFromLineNumber(i).GetText();
-                (int beginPos, int length, bool isLabel) pos = AsmSourceTools.Get_First_Keyword(line);
+                (int beginPos, int length, AsmTokenType type) pos = AsmSourceTools.Get_First_Keyword(line);
                 string keywordString = AsmSourceTools.Keyword(pos, line);
 
-                if (pos.isLabel)
+                if (pos.type == AsmTokenType.LabelDef)
                 {
                     if (!keywordString[0].Equals('.'))
                     {
