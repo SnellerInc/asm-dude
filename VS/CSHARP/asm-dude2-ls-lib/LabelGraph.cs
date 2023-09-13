@@ -28,13 +28,10 @@ namespace AsmDude2LS
     using System.Diagnostics;
     using System.Diagnostics.Contracts;
     using System.IO;
+    using System.Linq;
+
     using Amib.Threading;
-    //using AsmDude.SyntaxHighlighting;
     using AsmTools;
-    //using Microsoft.VisualStudio.Shell;
-    //using Microsoft.VisualStudio.Text;
-    //using Microsoft.VisualStudio.Text.Tagging;
-    //using Microsoft.VisualStudio.Utilities;
 
     public sealed class LabelGraph
     {
@@ -44,12 +41,6 @@ namespace AsmDude2LS
         /// immutable empty set to prevent creating one every time you need one
         /// </summary>
         //private static readonly SortedSet<uint> emptySet = new SortedSet<uint>();
-
-        //private readonly ITextBuffer buffer_;
-        //private readonly IBufferTagAggregatorFactoryService aggregatorFactory_;
-
-        //private readonly ITextDocumentFactoryService docFactory_;
-        //private readonly IContentType contentType_;
 
         private readonly TraceSource traceSource;
         private readonly AsmLanguageServerOptions options;
@@ -76,8 +67,6 @@ namespace AsmDude2LS
 
         public bool Enabled { get; private set; }
 
-        //public ErrorListProvider Error_List_Provider { get; private set; }
-
         private readonly Delay delay_;
         private bool bussy_ = false;
         private IWorkItemResult thread_Result_;
@@ -86,11 +75,6 @@ namespace AsmDude2LS
 
         #region Constructor
         public LabelGraph(
-                //ITextBuffer buffer,
-                //IBufferTagAggregatorFactoryService aggregatorFactory,
-                //ErrorListProvider errorListProvider,
-                //ITextDocumentFactoryService docFactory,
-                //IContentType contentType,
                 string[] lines,
                 string filename,
                 TraceSource traceSource,
@@ -101,12 +85,7 @@ namespace AsmDude2LS
             this.traceSource = traceSource;
             this.options = options;
 
-            //AsmDudeToolsStatic.Output_INFO(string.Format(AsmDudeToolsStatic.CultureUI, "LabelGraph:constructor: creating a label graph for {0}", AsmDudeToolsStatic.GetFileName(buffer)));
-            //this.buffer_ = buffer ?? throw new ArgumentNullException(nameof(buffer));
-            //this.aggregatorFactory_ = aggregatorFactory ?? throw new ArgumentNullException(nameof(aggregatorFactory));
-            //this.Error_List_Provider = errorListProvider ?? throw new ArgumentNullException(nameof(errorListProvider));
-            //this.docFactory_ = docFactory ?? throw new ArgumentNullException(nameof(docFactory));
-            //this.contentType_ = contentType;
+            LogInfo($"LabelGraph: constructor: creating a label graph for {filename}");
 
             this.filenames_ = new Dictionary<uint, string>();
 
@@ -120,17 +99,13 @@ namespace AsmDude2LS
 
 
             this.delay_ = new Delay(LanguageServer.MsSleepBeforeAsyncExecution, 100, AsmThreadPool.Instance.threadPool_);
-
             this.Enabled = this.options.IntelliSense_Label_Analysis_On;
 
-
-            LogInfo("LabelGraph: constructor");
-
-            //if (buffer.CurrentSnapshot.LineCount >= AsmDudeToolsStatic.MaxFileLines)
-            //{
-            //    this.Enabled = false;
-            //    logWarning(string.Format($"{this.ToString()}:LabelGraph; file {AsmDudeToolsStatic.GetFilename(buffer)} contains {buffer.CurrentSnapshot.LineCount} lines which is more than maxLines {AsmDudeToolsStatic.MaxFileLines}; switching off label analysis"));
-            //}
+            if (lines.Length >= options.MaxFileLines)
+            {
+                this.Enabled = false;
+                LogWarning($"{this}:LabelGraph; file {filename} contains {lines.Length} lines which is more than maxLines {options.MaxFileLines}; switching off label analysis");
+            }
 
             if (false) {
 #pragma warning disable CS0162 // Unreachable code detected
@@ -286,7 +261,7 @@ namespace AsmDude2LS
         {
             get
             {
-                SortedDictionary<string, string> result = new SortedDictionary<string, string>();
+                SortedDictionary<string, string> result = new();
                 lock (this.updateLock_)
                 {
                     foreach (KeyValuePair<string, IList<uint>> entry in this.defAt_)
@@ -297,13 +272,13 @@ namespace AsmDude2LS
                         string lineContent;
                         if (Is_From_Main_File(id))
                         {
-                            lineContent = " :TODO";// + this.buffer_.CurrentSnapshot.GetLineFromLineNumber(lineNumber).GetText();
+                            lineContent = " :" + this.lines.ElementAtOrDefault(lineNumber);
                         }
                         else
                         {
-                            lineContent = string.Empty;
+                            lineContent = " :TODO";
                         }
-                        result.Add(entry.Key, AsmDudeToolsStatic.Cleanup(string.Format(AsmDudeToolsStatic.CultureUI, "LINE {0} ({1}){2}", lineNumber + 1, filename, lineContent)));
+                        result.Add(entry.Key, AsmDudeToolsStatic.Cleanup($"LINE {lineNumber + 1} ({filename}){lineContent}"));
                     }
                 }
                 return result;
@@ -337,7 +312,7 @@ namespace AsmDude2LS
             {
                 if (this.defAt_PROTO_.TryGetValue(label, out IList<uint> list))
                 {
-                    //AsmDudeToolsStatic.Output_INFO("LabelGraph:Get_Label_Def_Linenumbers: PROTO label defintions. label=" + label + ": found "+list.Count +" definitions.");
+                    //AsmDudeToolsStatic.Output_INFO("LabelGraph:Get_Label_Def_Linenumbers: PROTO label definitions. label=" + label + ": found "+list.Count +" definitions.");
                     results.UnionWith(list);
                 }
             }
@@ -350,7 +325,7 @@ namespace AsmDude2LS
             Contract.Requires(label != null);
 
             //AsmDudeToolsStatic.Output_INFO("LabelGraph:Label_Used_At_Info: full_Qualified_Label=" + full_Qualified_Label + "; label=" + label);
-            SortedSet<uint> results = new SortedSet<uint>();
+            SortedSet<uint> results = new();
             {
                 if (this.usedAt_.TryGetValue(full_Qualified_Label, out IList<uint> lines))
                 {
@@ -365,10 +340,10 @@ namespace AsmDude2LS
             }
             if (full_Qualified_Label.Equals(label, StringComparison.Ordinal))
             {
-                AssemblerEnum usedAssember = this.options.Used_Assembler;
+                AssemblerEnum usedAssembler = this.options.Used_Assembler;
                 foreach (KeyValuePair<string, IList<uint>> entry in this.usedAt_)
                 {
-                    string regular_Label = AsmDudeToolsStatic.Retrieve_Regular_Label(entry.Key, usedAssember);
+                    string regular_Label = AsmDudeToolsStatic.Retrieve_Regular_Label(entry.Key, usedAssembler);
                     if (label.Equals(regular_Label, StringComparison.Ordinal))
                     {
                         results.UnionWith(entry.Value);

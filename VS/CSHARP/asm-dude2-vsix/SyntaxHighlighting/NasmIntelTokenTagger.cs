@@ -288,8 +288,7 @@ namespace AsmDude2
             SnapshotSpan curSpan)
         {
             Contract.Requires(tokens != null);
-            Contract.Requires(curSpan != null);
-
+ 
             (bool valid, int nextTokenId, int tokenEndPos, string tokenSting) = Get_Next_Token(tokenId, nextLoc, tokens);
             tokenId = nextTokenId;
             nextLoc = tokenEndPos;
@@ -404,29 +403,33 @@ namespace AsmDude2
                 string line = this.buffer_.CurrentSnapshot.GetLineFromLineNumber(i).GetText();
                 var pos = new List<(int, int, AsmTokenType type)>(AsmSourceTools.SplitIntoKeywordsType(line));
 
-                bool isLabel0 = pos[0].type == AsmTokenType.LabelDef;
-                
-                if ((pos.Count > 0) && !isLabel0)
+                if (pos.Count > 0)
                 {
-                    string keyword_upcase = AsmSourceTools.Keyword(pos[0], line).ToUpperInvariant();
-                    if (AsmSourceTools.IsMnemonic(keyword_upcase, true))
+                    bool isLabel0 = pos[0].type == AsmTokenType.LabelDef;
+                    if (!isLabel0)
                     {
-                        return true;
-                    }
-                    switch (keyword_upcase)
-                    {
-                        case "STRUC": return false;
-                        case "ENDSTRUC": return true;
+                        string keyword_upcase = AsmSourceTools.Keyword(pos[0], line).ToUpperInvariant();
+                        if (AsmSourceTools.IsMnemonic(keyword_upcase, true))
+                        {
+                            return true;
+                        }
+                        switch (keyword_upcase)
+                        {
+                            case "STRUC": return false;
+                            case "ENDSTRUC": return true;
+                        }
                     }
                 }
-
-                bool isLabel1 = pos[1].type == AsmTokenType.LabelDef;
-                if ((pos.Count > 1) && !isLabel1)
+                if (pos.Count > 1)
                 {
-                    string keyword_upcase = AsmSourceTools.Keyword(pos[1], line).ToUpperInvariant();
-                    if (AsmSourceTools.IsMnemonic(keyword_upcase, true))
+                    bool isLabel1 = pos[1].type == AsmTokenType.LabelDef;
+                    if (!isLabel1)
                     {
-                        return true;
+                        string keyword_upcase = AsmSourceTools.Keyword(pos[1], line).ToUpperInvariant();
+                        if (AsmSourceTools.IsMnemonic(keyword_upcase, true))
+                        {
+                            return true;
+                        }
                     }
                 }
             }

@@ -3,13 +3,14 @@ using System.Runtime.InteropServices;
 
 namespace AsmDude2LS;
 
-public class Worker : BackgroundService
+public partial class Worker : BackgroundService
 {
-    [DllImport("kernel32.dll")]
-    private static extern IntPtr GetConsoleWindow();
+    [LibraryImport("kernel32.dll")]
+    private static partial IntPtr GetConsoleWindow();
 
-    [DllImport("user32.dll")]
-    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
     const int SW_HIDE = 0;
     const int SW_SHOW = 5;
@@ -21,7 +22,11 @@ public class Worker : BackgroundService
 
     public Worker(ILogger<Worker> logger)
     {
+#if DEBUG
+        //ShowWindow(GetConsoleWindow(), SW_HIDE);
+#else
         ShowWindow(GetConsoleWindow(), SW_HIDE);
+#endif
         logger.LogInformation("Worker created at: {time}", DateTimeOffset.Now);
 
         this._logger = logger;

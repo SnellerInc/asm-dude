@@ -253,6 +253,12 @@ namespace AsmDude2
             try
             {
                 XmlAttribute archAttribute = node.Attributes["arch"];
+
+                if (archAttribute!=null)
+                {
+                    Console.WriteLine($"INFO: AsmDudeTools:Retrieve_Arch \"{archAttribute.Value}\"");
+                }
+
                 return (archAttribute == null) ? Arch.ARCH_NONE : ArchTools.ParseArch(archAttribute.Value, false, true);
             }
             catch (Exception)

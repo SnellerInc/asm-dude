@@ -36,15 +36,15 @@ namespace AsmDude2LS
 
     public class MnemonicStore
     {
-        private readonly IDictionary<Mnemonic, IList<AsmSignatureInformation>> data_;
-        private readonly IDictionary<Mnemonic, IList<Arch>> arch_;
-        private readonly IDictionary<Mnemonic, string> htmlRef_;
-        private readonly IDictionary<Mnemonic, string> description_;
+        private readonly Dictionary<Mnemonic, IList<AsmSignatureInformation>> data_;
+        private readonly Dictionary<Mnemonic, IList<Arch>> arch_;
+        private readonly Dictionary<Mnemonic, string> htmlRef_;
+        private readonly Dictionary<Mnemonic, string> description_;
         private readonly TraceSource traceSource;
         private readonly AsmLanguageServerOptions options;
 
-        private readonly ISet<Mnemonic> mnemonics_switched_on_;
-        private readonly ISet<Rn> register_switched_on_;
+        private readonly HashSet<Mnemonic> mnemonics_switched_on_;
+        private readonly HashSet<Rn> register_switched_on_;
 
         public MnemonicStore(string filename_RegularData, string filename_HandcraftedData, TraceSource traceSource, AsmLanguageServerOptions options)
         {
@@ -86,14 +86,17 @@ namespace AsmDude2LS
 
         private void LogInfo(string msg)
         {
+            Console.WriteLine($"INFO: {msg}");
             this.traceSource.TraceEvent(TraceEventType.Information, 0, msg);
         }
         private void LogWarning(string msg)
         {
+            Console.WriteLine($"WARNING: {msg}");
             this.traceSource.TraceEvent(TraceEventType.Warning, 0, msg);
         }
         private void LogError(string msg)
         {
+            Console.WriteLine($"ERROR: {msg}");
             this.traceSource.TraceEvent(TraceEventType.Error, 0, msg);
         }
 
@@ -141,7 +144,7 @@ namespace AsmDude2LS
 
         public override string ToString()
         {
-            StringBuilder sb = new StringBuilder();
+            StringBuilder sb = new();
             foreach (KeyValuePair<Mnemonic, IList<AsmSignatureInformation>> element in this.data_)
             {
                 Mnemonic mnemonic = element.Key;
@@ -207,7 +210,7 @@ namespace AsmDude2LS
 
             string ParamDoc(IList<AsmSignatureEnum> x)
             {
-                StringBuilder argDoc = new StringBuilder();
+                StringBuilder argDoc = new();
                 foreach (AsmSignatureEnum op in x)
                 {
                     argDoc.Append(AsmSignatureTools.Get_Doc(op) + " or ");
@@ -267,6 +270,12 @@ namespace AsmDude2LS
 
             var operandList = new List<IList<AsmSignatureEnum>>();
 
+            var archs = ArchTools.ParseArchList(arch, false, true);
+            if (archs[0] == Arch.ARCH_NONE)
+            {
+                Console.WriteLine($"MnemonicStore: CreateAsmSignatureElement: arch is \"{arch}\": mnemonic={mnemonic}; doc ={doc}");
+            }
+
             for (int j = 0; j < operands.Length; ++j)
             {
                 var operand = ParseOperands(operands[j]);
@@ -280,7 +289,7 @@ namespace AsmDude2LS
             }
             return new AsmSignatureInformation{
                 Mnemonic = mnemonic,
-                Arch = ArchTools.ParseArchList(arch, false, true),
+                Arch = archs,
                 Operands = operandList,
                 SignatureInformation = new SignatureInformation
                 {
@@ -296,7 +305,7 @@ namespace AsmDude2LS
             //AsmDudeToolsStatic.Output_INFO("MnemonicStore:loadRegularData: filename=" + filename);
             try
             {
-                StreamReader file = new StreamReader(filename);
+                StreamReader file = new(filename);
                 string line;
                 while ((line = file.ReadLine()) != null)
                 {
@@ -406,7 +415,7 @@ namespace AsmDude2LS
             //AsmDudeToolsStatic.Output_INFO("MnemonicStore:load_data_intel: filename=" + filename);
             try
             {
-                StreamReader file = new StreamReader(filename);
+                StreamReader file = new(filename);
                 string line;
                 while ((line = file.ReadLine()) != null)
                 {
@@ -425,17 +434,11 @@ namespace AsmDude2LS
                             }
                             else
                             {
-                                if (this.description_.ContainsKey(mnemonic))
-                                {
-                                    this.description_.Remove(mnemonic);
-                                }
+                                this.description_.Remove(mnemonic);
                                 //LogInfo($"MnemonicStore:LoadHandcraftedData adding description for mnemonic={mnemonic}; descr={columns[2]}");
                                 this.description_.Add(mnemonic, columns[2]);
 
-                                if (this.htmlRef_.ContainsKey(mnemonic))
-                                {
-                                    this.htmlRef_.Remove(mnemonic);
-                                }
+                                this.htmlRef_.Remove(mnemonic);
                                 //LogInfo($"LoadHandcraftedData adding description for mnemonic={mnemonic}; url={columns[3]}");
                                 this.htmlRef_.Add(mnemonic, columns[3]);
                             }

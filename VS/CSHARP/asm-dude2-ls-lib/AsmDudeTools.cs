@@ -28,11 +28,9 @@ namespace AsmDude2LS
     using System.Diagnostics.Contracts;
     using System.Globalization;
     using System.IO;
-    using System.Linq;
     using System.Xml;
-    using System.Xml.XPath;
+
     using AsmTools;
-    using Microsoft.VisualStudio.LanguageServer.Protocol;
 
     public sealed class AsmDude2Tools : IDisposable
     {
@@ -41,12 +39,7 @@ namespace AsmDude2LS
         private Dictionary<string, AssemblerEnum> assembler_;
         private Dictionary<string, Arch> arch_;
         private Dictionary<string, string> description_;
-        //private readonly ISet<Mnemonic> mnemonics_switched_on_;
-        //private readonly ISet<Rn> register_switched_on_;
         private readonly TraceSource traceSource;
-
-        //private readonly ErrorListProvider errorListProvider_;
-        //private readonly SmartThreadPool threadPool_;
 
 
         #region Singleton Stuff
@@ -62,28 +55,6 @@ namespace AsmDude2LS
         {
             this.traceSource = traceSource;
             LogInfo("AsmDude2Tools: constructor");
-
-            //ThreadHelper.ThrowIfNotOnUIThread();
-
-            #region Initialize ErrorListProvider
-
-            //this._errorListProvider = new ErrorListProvider(new ServiceProvider(Package.GetGlobalService(typeof(Microsoft.VisualStudio.OLE.Interop.IServiceProvider)) as Microsoft.VisualStudio.OLE.Interop.IServiceProvider))
-            //{
-            //    ProviderName = "Asm Errors",
-            //    ProviderGuid = new Guid(EnvDTE.Constants.vsViewKindCode),
-            //};
-
-           // IServiceProvider a = Package.GetGlobalService(typeof(System.IServiceProvider)) as IServiceProvider;
-
-           // this.errorListProvider_ = new ErrorListProvider(a)
-           // {
-           //     ProviderName = "Asm Errors",
-           //     ProviderGuid = new Guid(EnvDTE.Constants.vsViewKindCode),
-          //  };
-
-            #endregion
-
-            //this.threadPool_ = new SmartThreadPool();
 
             this.Init_Data(path);
 
@@ -270,63 +241,10 @@ namespace AsmDude2LS
 
         #region Public Methods
 
-
-        //public ErrorListProvider Error_List_Provider { get { return this.errorListProvider_; } }
-
-        //public SmartThreadPool Thread_Pool { get { return this.threadPool_; } }
-
         /// <summary>Get the collection of Keywords (in CAPITALS), but NOT mnemonics and registers</summary>
         public IEnumerable<string> Get_Keywords()
         {
             return this.type_.Keys;
-        }
-
-        public AsmTokenType Get_Token_Type_Att(string keyword)
-        {
-            Contract.Requires(keyword != null);
-            Contract.Requires(keyword == keyword.ToUpperInvariant());
-
-            int length = keyword.Length;
-            Contract.Requires(length > 0);
-
-            char firstChar = keyword[0];
-
-            #region Test if keyword is a register
-            if (firstChar == '%')
-            {
-                string keyword2 = keyword.Substring(1);
-                Rn reg = RegisterTools.ParseRn(keyword2, true);
-                if (reg != Rn.NOREG)
-                {
-                    // return (this.RegisterSwitchedOn(reg))
-                    //    ? AsmTokenType.Register
-                    //    : AsmTokenType.Register; //TODO
-                    return AsmTokenType.Register; //TODO
-                }
-            }
-            #endregion
-            #region Test if keyword is an imm
-            if (firstChar == '$')
-            {
-                return AsmTokenType.Constant;
-            }
-            #endregion
-            #region Test if keyword is an instruction
-            {
-                (Mnemonic mnemonic, AttType type) = AsmSourceTools.ParseMnemonic_Att(keyword, true);
-                if (mnemonic != Mnemonic.NONE)
-                {
-                    //TODO
-                    // return (this.MnemonicSwitchedOn(mnemonic))
-                    //     ? AsmSourceTools.IsJump(mnemonic) ? AsmTokenType.Jump : AsmTokenType.Mnemonic
-                    //     : AsmSourceTools.IsJump(mnemonic) ? AsmTokenType.Jump : AsmTokenType.MnemonicOff;
-
-                    return AsmSourceTools.IsJump(mnemonic) ? AsmTokenType.Jump : AsmTokenType.Mnemonic;
-                }
-            }
-            #endregion
-
-            return this.type_.TryGetValue(keyword, out AsmTokenType tokenType) ? tokenType : AsmTokenType.UNKNOWN;
         }
 
         public AsmTokenType Get_Token_Type_Intel(string keyword)
@@ -364,15 +282,7 @@ namespace AsmDude2LS
         }
 
         /// <summary>
-        /// get url for the provided keyword. Returns empty string if the keyword does not exist or the keyword does not have an url.
-        /// </summary>
-        public string Get_Url(Mnemonic mnemonic)
-        {
-            return "TODO";// this.Mnemonic_Store.GetHtmlRef(mnemonic);
-        }
-
-        /// <summary>
-        /// get descripton for the provided keyword. Returns empty string if the keyword does not exist or the keyword does not have an description. Keyword has to be in CAPITALS
+        /// get description for the provided keyword. Returns empty string if the keyword does not exist or the keyword does not have an description. Keyword has to be in CAPITALS
         /// </summary>
         public string Get_Description(string keyword)
         {
@@ -392,14 +302,6 @@ namespace AsmDude2LS
 
             return this.arch_.TryGetValue(keyword, out Arch value) ? value : Arch.ARCH_NONE;
         }
-
-        public void Invalidate_Data()
-        {
-            this.xmlData_ = null;
-            this.type_ = null;
-            this.description_ = null;
-        }
-
         #endregion Public Methods
 
         #region Private Methods

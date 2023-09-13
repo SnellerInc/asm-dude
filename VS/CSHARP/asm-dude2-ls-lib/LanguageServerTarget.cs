@@ -68,6 +68,7 @@ namespace AsmDude2LS
         private void LogInfo(string message)
         {
             if (this.traceSetting == TraceSetting.Verbose) {
+                //Console.WriteLine($"INFO {message}");
                 this.traceSource.TraceEvent(TraceEventType.Information, 0, message);
             }
         }
@@ -251,6 +252,7 @@ namespace AsmDude2LS
         [JsonRpcMethod(Methods.TextDocumentDidChangeName)]
         public void OnTextDocumentChanged(JToken arg)
         {
+            Console.WriteLine($"OnTextDocumentChanged: Received:{arg}");
             LogInfo($"OnTextDocumentChanged: Received: {arg}");
             var parameter = arg.ToObject<DidChangeTextDocumentParams>();
             Debug.WriteLine($"Document Change: {parameter.TextDocument.Uri.AbsolutePath}");

@@ -23,7 +23,6 @@
 using Microsoft.VisualStudio.LanguageServer.Client;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Utilities;
-using StreamJsonRpc;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;

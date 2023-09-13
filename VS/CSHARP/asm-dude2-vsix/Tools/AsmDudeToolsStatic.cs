@@ -408,7 +408,7 @@ namespace AsmDude2.Tools
         /// <summary>
         /// Output message to the AsmSim window
         /// </summary>
-        public static async System.Threading.Tasks.Task OutputAsync(string msg)
+        public static async Task OutputAsync(string msg)
         {
             Contract.Requires(msg != null);
 

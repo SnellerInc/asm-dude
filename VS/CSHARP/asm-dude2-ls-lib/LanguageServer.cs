@@ -61,12 +61,12 @@ namespace AsmDude2LS
         private readonly HeaderDelimitedMessageHandler messageHandler;
         private readonly LanguageServerTarget target;
         private readonly ManualResetEvent disconnectEvent = new(false);
-        private readonly IList<Diagnostic> diagnostics;
+        private readonly List<Diagnostic> diagnostics;
 
-        private readonly IDictionary<Uri, TextDocumentItem> textDocuments;
-        private readonly IDictionary<Uri, string[]> textDocumentLines;
-        private readonly IDictionary<Uri, IEnumerable<AsmFoldingRange>> foldingRanges;
-        private readonly IDictionary<Uri, LabelGraph> labelGraphs;
+        private readonly Dictionary<Uri, TextDocumentItem> textDocuments;
+        private readonly Dictionary<Uri, string[]> textDocumentLines;
+        private readonly Dictionary<Uri, IEnumerable<AsmFoldingRange>> foldingRanges;
+        private readonly Dictionary<Uri, LabelGraph> labelGraphs;
 
         private readonly int referencesChunkSize = 10;
         private readonly int referencesDelayMs = 10;
@@ -165,13 +165,9 @@ namespace AsmDude2LS
             return (lineStr.Substring(startPos, length), startPos, endPos);
         }
 
-        private static string Truncate(string text)
+        private static string Truncate(string text, int maxLength = MAX_LENGTH_DESCR_TEXT)
         {
-            if (text.Length < MAX_LENGTH_DESCR_TEXT)
-            {
-                return text;
-            }
-            return string.Concat(text.AsSpan(0, MAX_LENGTH_DESCR_TEXT), "...");
+            return (text.Length < maxLength) ? text : string.Concat(text.AsSpan(0, maxLength), "...");
         }
 
         private char GetChar(string str, int offset)
@@ -195,6 +191,15 @@ namespace AsmDude2LS
             if (this.textDocuments.TryGetValue(uri, out TextDocumentItem document))
             {
                 return document;
+            }
+            return null;
+        }
+
+        private LabelGraph GetLabelGraph(Uri uri)
+        {
+            if (this.labelGraphs.TryGetValue(uri, out var graph))
+            {
+                return graph;
             }
             return null;
         }
@@ -312,10 +317,7 @@ namespace AsmDude2LS
             TextDocumentItem document = GetTextDocument(uri);
             if (document != null)
             {
-                if (this.textDocumentLines.ContainsKey(uri))
-                {
-                    this.textDocumentLines.Remove(uri);
-                }
+                this.textDocumentLines.Remove(uri);
                 this.textDocumentLines.Add(uri, document.Text.Split(new string[] { Environment.NewLine }, StringSplitOptions.None));
                 this.diagnostics.Clear();
                 this.UpdateFoldingRanges(uri);
@@ -348,10 +350,7 @@ namespace AsmDude2LS
         {
             LogInfo("UpdateLabelGraph");
 
-            if (this.labelGraphs.ContainsKey(uri))
-            {
-                this.labelGraphs.Remove(uri);
-            }
+            this.labelGraphs.Remove(uri);
 
             var textDocument = this.GetTextDocument(uri);
             string filename = textDocument.Uri.LocalPath;
@@ -419,9 +418,9 @@ namespace AsmDude2LS
                     int offsetEndRegion = lineStr.IndexOf(EndKeyword);
                     if (offsetEndRegion != -1)
                     {
-                        if (startLineNumbers.Count() == 0)
+                        if (startLineNumbers.Count == 0)
                         {
-                            var severity = Microsoft.VisualStudio.LanguageServer.Protocol.DiagnosticSeverity.Warning;
+                            var severity = DiagnosticSeverity.Warning;
                             TextDocumentIdentifier textDocumentIdentifier = null;//TODO
 
                             string message = $"keyword {EndKeyword} has no matching {StartKeyword} keyword";
@@ -883,8 +882,15 @@ namespace AsmDude2LS
             List<SignatureInformation> z = new();
             foreach (AsmSignatureInformation asmSignatureElement in y)
             {
-                LogInfo($"OnTextDocumentSignatureHelp: adding SignatureInformation: {asmSignatureElement.SignatureInformation.Label}");
-                z.Add(asmSignatureElement.SignatureInformation);
+                if (asmSignatureElement.Operands.Count > 0)
+                {
+                    LogInfo($"OnTextDocumentSignatureHelp: adding SignatureInformation: {asmSignatureElement.SignatureInformation.Label}");
+                    z.Add(asmSignatureElement.SignatureInformation);
+                }
+            }
+            if (z.Count == 0)
+            {
+                return null; // no signature help present
             }
 
             int nCommas = operands.Count;
@@ -902,10 +908,7 @@ namespace AsmDude2LS
 
         public void SetFoldingRanges(IEnumerable<AsmFoldingRange> foldingRanges, Uri uri)
         {
-            if (this.foldingRanges.ContainsKey(uri))
-            {
-                this.foldingRanges.Remove(uri);
-            }
+            this.foldingRanges.Remove(uri);
             this.foldingRanges.Add(uri, foldingRanges);
         }
 
@@ -973,8 +976,7 @@ namespace AsmDude2LS
 
             foreach (string keyword in this.asmDudeTools.Get_Keywords())
             {
-                AsmTokenType type = this.asmDudeTools.Get_Token_Type_Intel(keyword);
-                Arch arch = this.asmDudeTools.Get_Architecture(keyword);
+                AsmTokenType type = this.asmDudeTools.Get_Token_Type_Intel(keyword); //TODO support all assemblers
 
                 string keyword2 = keyword;
                 bool selected = true;
@@ -999,6 +1001,7 @@ namespace AsmDude2LS
                 }
                 if (selected)
                 {
+                    Arch arch = this.asmDudeTools.Get_Architecture(keyword);
                     //AsmDudeToolsStatic.Output_INFO("AsmCompletionSource:AugmentCompletionSession: keyword \"" + keyword + "\" is added to the completions list");
 
                     // by default, the entry.Key is with capitals
@@ -1021,6 +1024,46 @@ namespace AsmDude2LS
             return completions;
         }
 
+        private IEnumerable<CompletionItem> Label_Completions(LabelGraph labelGraph, bool useCapitals, bool addSpecialKeywords)
+        {
+            if (addSpecialKeywords)
+            {
+                yield return new CompletionItem
+                {
+                    Kind = GetCompletionItemKind(AsmTokenType.Misc),
+                    Label = "SHORT",
+                    InsertText = useCapitals ? "SHORT" : "short",
+                    SortText = "\tSHORT", // use a tab to get on top when sorting
+                    Documentation = string.Empty
+                };
+                yield return new CompletionItem
+                {
+                    Kind = GetCompletionItemKind(AsmTokenType.Misc),
+                    Label = "NEAR",
+                    InsertText = useCapitals ? "NEAR" : "near",
+                    SortText = "\tNEAR", // use a tab to get on top when sorting
+                    Documentation = string.Empty
+                };
+            }
+
+            AssemblerEnum usedAssembler = this.options.Used_Assembler;
+
+            SortedDictionary<string, string> labels = labelGraph.Label_Descriptions;
+            foreach (KeyValuePair<string, string> entry in labels)
+            {
+                //Debug.WriteLine(string.Format(CultureInfo.CurrentCulture, "INFO:{0}:AugmentCompletionSession; label={1}; description={2}", this.ToString(), entry.Key, entry.Value));
+                string displayTextFull = entry.Key + " - " + entry.Value;
+                string insertionText = AsmDudeToolsStatic.Retrieve_Regular_Label(entry.Key, usedAssembler);
+                yield return new CompletionItem
+                {
+                    Kind = GetCompletionItemKind(AsmTokenType.Label),
+                    Label = Truncate(insertionText, 30),
+                    InsertText = insertionText,
+                    Documentation = displayTextFull
+                };
+            }
+        }
+
         public CompletionList GetTextDocumentCompletion(CompletionParams parameter)
         {
             IEnumerable<CompletionItem> Selected_Completions(bool useCapitals, ISet<AsmTokenType> selectedTypes, bool addSpecialKeywords)
@@ -1037,7 +1080,7 @@ namespace AsmDude2LS
                         {
                             Kind = CompletionItemKind.Macro,
                             Label = $"{labelText} - keyword to start code folding",
-                            InsertText = labelText.Substring(1), // remove the prefix #
+                            InsertText = labelText[1..], // remove the prefix #
                             SortText = labelText,
                             //Documentation = $"keyword to start code folding",
                         });
@@ -1048,7 +1091,7 @@ namespace AsmDude2LS
                         {
                             Kind = CompletionItemKind.Macro,
                             Label = $"{labelText} - keyword to end code folding",
-                            InsertText = labelText.Substring(1), // remove the prefix #
+                            InsertText = labelText[1..], // remove the prefix #
                             SortText = labelText,
                             //Documentation = $"keyword to end code folding",
                         });
@@ -1063,14 +1106,14 @@ namespace AsmDude2LS
                 {
                     foreach (Mnemonic mnemonic2 in this.mnemonicStore.Get_Allowed_Mnemonics())
                     {
-                        string keyword_upcase = mnemonic2.ToString();
-                        string insertionText = useCapitals ? keyword_upcase : keyword_upcase.ToLowerInvariant();
+                        string keyword_uppercase = mnemonic2.ToString();
+                        string insertionText = useCapitals ? keyword_uppercase : keyword_uppercase.ToLowerInvariant();
                         string archStr = ArchTools.ToString(this.mnemonicStore.GetArch(mnemonic2));
 
                         completions.Add(new CompletionItem
                         {
                             Kind = CompletionItemKind.Keyword,
-                            Label = $"{keyword_upcase} {archStr}",
+                            Label = $"{keyword_uppercase} {archStr}",
                             InsertText = insertionText,
                             SortText = insertionText,
                             Documentation = this.mnemonicStore.GetDescription(mnemonic2),
@@ -1078,9 +1121,9 @@ namespace AsmDude2LS
                     }
                 }
                 //Add the completions that are defined in the xml file
-                foreach (string keyword_upcase in this.asmDudeTools.Get_Keywords())
+                foreach (string keyword_uppercase in this.asmDudeTools.Get_Keywords())
                 {
-                    AsmTokenType type = this.asmDudeTools.Get_Token_Type_Intel(keyword_upcase);
+                    AsmTokenType type = this.asmDudeTools.Get_Token_Type_Intel(keyword_uppercase);
                     if (selectedTypes.Contains(type))
                     {
                         Arch arch = Arch.ARCH_NONE;
@@ -1088,7 +1131,7 @@ namespace AsmDude2LS
 
                         if (type == AsmTokenType.Directive)
                         {
-                            AssemblerEnum assembler = this.asmDudeTools.Get_Assembler(keyword_upcase);
+                            AssemblerEnum assembler = this.asmDudeTools.Get_Assembler(keyword_uppercase);
                             if (assembler.HasFlag(AssemblerEnum.MASM))
                             {
                                 if (!usedAssembler.HasFlag(AssemblerEnum.MASM))
@@ -1106,20 +1149,20 @@ namespace AsmDude2LS
                         }
                         else
                         {
-                            arch = this.asmDudeTools.Get_Architecture(keyword_upcase);
+                            arch = this.asmDudeTools.Get_Architecture(keyword_uppercase);
                             selected = this.options.Is_Arch_Switched_On(arch);
                         }
 
-                        LogInfo("CodeCompletionSource:Selected_Completions; keyword=" + keyword_upcase + "; arch=" + arch + "; selected=" + selected);
+                        LogInfo("CodeCompletionSource:Selected_Completions; keyword=" + keyword_uppercase + "; arch=" + arch + "; selected=" + selected);
 
                         if (selected)
                         {
                             // by default, the entry.Key is with capitals
-                            string insertionText = useCapitals ? keyword_upcase : keyword_upcase.ToLowerInvariant();
+                            string insertionText = useCapitals ? keyword_uppercase : keyword_uppercase.ToLowerInvariant();
                             string archStr = (arch == Arch.ARCH_NONE) ? string.Empty : " [" + ArchTools.ToString(arch) + "]";
-                            string descriptionStr = this.asmDudeTools.Get_Description(keyword_upcase);
+                            string descriptionStr = this.asmDudeTools.Get_Description(keyword_uppercase);
                             descriptionStr = (string.IsNullOrEmpty(descriptionStr)) ? string.Empty : " - " + descriptionStr;
-                            string displayTextFull = keyword_upcase + archStr + descriptionStr;
+                            string displayTextFull = keyword_uppercase + archStr + descriptionStr;
                             string displayText = Truncate(displayTextFull);
 
                             completions.Add(new CompletionItem
@@ -1180,7 +1223,8 @@ namespace AsmDude2LS
                     // the line contains a mnemonic but we are not in a comment
                     if (AsmTools.AsmSourceTools.IsJump(mnemonic))
                     {
-                        // TODO select labels
+                        var labelGraph = this.GetLabelGraph(parameter.TextDocument.Uri);
+                        items.AddRange(this.Label_Completions(labelGraph, useCapitals, true));
                     }
                     else
                     {
@@ -1201,11 +1245,7 @@ namespace AsmDude2LS
                                 }
                             }
                         }
-                        IEnumerable<CompletionItem> completions = this.Mnemonic_Operand_Completions(useCapitals, allowed, parameter.Position.Line);
-                        if (completions.Any())
-                        {
-                            items.AddRange(completions);
-                        }
+                        items.AddRange(this.Mnemonic_Operand_Completions(useCapitals, allowed, parameter.Position.Line));
                     }
                 }
             }
@@ -1338,16 +1378,16 @@ namespace AsmDude2LS
             {
                 return null;
             }
-            string keyword_upcase = keyword.ToUpperInvariant();
+            string keyword_uppercase = keyword.ToUpperInvariant();
 
             SumType<string, MarkedString>[] hoverContent = null;
 
-            switch (GetAsmTokenType(keyword_upcase))
+            switch (GetAsmTokenType(keyword_uppercase))
             {
                 case AsmTokenType.Mnemonic: // intentional fall through
                 case AsmTokenType.Jump:
                     {
-                        Mnemonic mnemonic = AsmTools.AsmSourceTools.ParseMnemonic(keyword_upcase, true);
+                        Mnemonic mnemonic = AsmTools.AsmSourceTools.ParseMnemonic(keyword_uppercase, true);
                         string mnemonicStr = mnemonic.ToString();
                         string archStr = ":" + ArchTools.ToString(this.mnemonicStore.GetArch(mnemonic));
                         string descr = this.mnemonicStore.GetDescription(mnemonic);
@@ -1423,12 +1463,12 @@ namespace AsmDude2LS
                 case AsmTokenType.Register:
                     {
                         // int lineNumber = //AsmTools.AsmDudeToolsStatic.Get_LineNumber(tagSpan);
-                        if (keyword_upcase.StartsWith("%", StringComparison.Ordinal))
+                        if (keyword_uppercase.StartsWith("%", StringComparison.Ordinal))
                         {
-                            keyword_upcase = keyword_upcase.Substring(1); // remove the preceding % in AT&T syntax
+                            keyword_uppercase = keyword_uppercase.Substring(1); // remove the preceding % in AT&T syntax
                         }
 
-                        Rn reg = RegisterTools.ParseRn(keyword_upcase, true);
+                        Rn reg = RegisterTools.ParseRn(keyword_uppercase, true);
                         if (this.mnemonicStore.RegisterSwitchedOn(reg))
                         {
                             string regStr = reg.ToString();
@@ -1459,10 +1499,10 @@ namespace AsmDude2LS
                     break;
                 case AsmTokenType.UNKNOWN:
                     {
-                        string descr = this.asmDudeTools.Get_Description(keyword_upcase);
+                        string descr = this.asmDudeTools.Get_Description(keyword_uppercase);
                         if (descr.Length > 0)
                         {
-                            if (keyword_upcase.Length > (MaxNumberOfCharsInToolTips / 2))
+                            if (keyword_uppercase.Length > (MaxNumberOfCharsInToolTips / 2))
                             {
                                 descr = "\n" + descr;
                             }
@@ -1683,7 +1723,7 @@ namespace AsmDude2LS
             for (int line = 0; line < lines.Length; ++line)
             {
                 string lineStr = lines[line];
-                (string label, Mnemonic mnemonic, string[] args, string remark) = AsmTools.AsmSourceTools.ParseLine(lineStr);
+                (string label, Mnemonic mnemonic, string[] args, string _) = AsmTools.AsmSourceTools.ParseLine(lineStr);
                 if (label.Length > 0)
                 {
                     int pos = lineStr.IndexOf(label);
@@ -1723,7 +1763,7 @@ namespace AsmDude2LS
                     {
                         Name = mnemonicStr,
                         Kind = SymbolKind.Function,
-                        HintText = "some hinttext here?",
+                        HintText = "some hint text here?",
                         Description = "some description here?",
                         Location = new Location
                         {
@@ -1752,7 +1792,7 @@ namespace AsmDude2LS
                             {
                                 Name = mnemonic.ToString(),
                                 Kind = SymbolKind.Function,
-                                HintText = "some hinttext here?",
+                                HintText = "some hint text here?",
                                 Description = "some description here?",
                             });
                         }
@@ -1780,7 +1820,8 @@ namespace AsmDude2LS
             {
                 AsmTokenType.Directive => CompletionItemKind.Value,
                 AsmTokenType.Register => CompletionItemKind.Variable,
-                AsmTokenType.Misc => CompletionItemKind.Struct,
+                AsmTokenType.Misc => CompletionItemKind.Unit,
+                AsmTokenType.Label => CompletionItemKind.Reference,
                 _ => CompletionItemKind.None,
             };
         }

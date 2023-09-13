@@ -96,7 +96,6 @@ namespace AsmDude2.SyntaxHighlighting
     [ContentType(AsmDude2Package.DisassemblyContentType)]
     [TagType(typeof(ClassificationTag))]
     [Name("AsmDisassemblyTaggerProvider")]
-  //  [Order(After = Priority.High)]
     internal sealed class AsmDisassemblyTaggerProvider : ITaggerProvider
     {
         [Import]

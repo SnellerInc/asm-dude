@@ -290,8 +290,6 @@ namespace AsmDude2
             string[] tokens,
             SnapshotSpan curSpan)
         {
-            Contract.Requires(curSpan != null);
-
             (bool valid, int nextTokenId, int tokenEndPos, string tokenSting) = Get_Next_Token(tokenId, nextLoc, tokens);
             tokenId = nextTokenId;
             nextLoc = tokenEndPos;
@@ -348,7 +346,6 @@ namespace AsmDude2
 
         public static SnapshotSpan New_Span((int beginPos, int length, AsmTokenType _) pos, int offset, SnapshotSpan lineSnapShot)
         {
-            Contract.Requires(lineSnapShot != null);
             return new SnapshotSpan(lineSnapShot.Snapshot, new Span(pos.beginPos + offset, pos.length - pos.beginPos));
         }
         #endregion Public Static Methods

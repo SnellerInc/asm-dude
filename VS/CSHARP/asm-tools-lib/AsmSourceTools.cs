@@ -153,12 +153,13 @@ namespace AsmTools
             }
             else
             {
-                nOperands--;
-                List<Operand> operands = new List<Operand>(nOperands);
-                for (int i = 0; i < nOperands; ++i)
+                var operands = new List<Operand>(nOperands);
+                foreach (string opStr in operandStrArray)
                 {
-                    string opStr = operandStrArray[i];
-                    operands.Add((string.IsNullOrEmpty(opStr)) ? null : new Operand(opStr, false));
+                    if (!string.IsNullOrEmpty(opStr))
+                    {
+                        operands.Add(new Operand(opStr, false));
+                    }
                 }
                 return operands;
             }

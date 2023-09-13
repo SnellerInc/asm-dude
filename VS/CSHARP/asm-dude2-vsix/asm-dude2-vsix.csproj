@@ -63,6 +63,14 @@
 		<PackageIcon>AsmDude2.png</PackageIcon>
 	</PropertyGroup>
 
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+	  <WarningLevel>9999</WarningLevel>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+	  <WarningLevel>9999</WarningLevel>
+	</PropertyGroup>
+
 	<ItemGroup>
 	  <Content Remove="C:\Users\henkj\.nuget\packages\microsoft.vssdk.buildtools\17.7.2196\contentFiles\any\net472\LICENSE_SDKOOB.txt" />
 	  <Content Remove="C:\Users\henkj\.nuget\packages\microsoft.vssdk.buildtools\17.7.2196\contentFiles\any\net472\vsextensibilityicon.png" />
@@ -146,9 +154,6 @@
 	    <Generator>SettingsSingleFileGenerator</Generator>
 	    <LastGenOutput>Settings.Designer.cs</LastGenOutput>
 	  </None>
-	</ItemGroup>
-	<ItemGroup>
-	  <Folder Include="vsix\" />
 	</ItemGroup>
 
 	<Target Name="IncludeLanguageServers" BeforeTargets="GetVsixSourceItems">
