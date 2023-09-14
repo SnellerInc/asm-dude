@@ -69,16 +69,6 @@ namespace AsmSim
             // TestMemoryLeak();
             // Test_NullReference_Bsf_1();
 
-            if (false)
-            {
-                AsmSourceTools.SpeedTestMnemonicParsing();
-            }
-
-            if (false)
-            {
-                AsmSourceTools.SpeedTestRegisterParsing();
-            }
-
             if (true)
             {
                 TestTactic();

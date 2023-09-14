@@ -256,7 +256,7 @@ namespace AsmDude2LS
             if (mnemonic != Mnemonic.NONE)
             {
                 //TODO
-                //return (this.MnemonicSwitchedOn(mnemonic))
+                //return (this.IsMnemonicSwitchedOn(mnemonic))
                 //    ? AsmSourceTools.IsJump(mnemonic) ? AsmTokenType.Jump : AsmTokenType.Mnemonic
                 //    : AsmSourceTools.IsJump(mnemonic) ? AsmTokenType.Jump : AsmTokenType.MnemonicOff;
 
@@ -265,7 +265,7 @@ namespace AsmDude2LS
             Rn reg = RegisterTools.ParseRn(keyword, true);
             if (reg != Rn.NOREG)
             {
-                //return (this.RegisterSwitchedOn(reg))
+                //return (this.IsRegisterSwitchedOn(reg))
                 //    ? AsmTokenType.Register
                 //    : AsmTokenType.Register; //TODO
                 return AsmTokenType.Register;

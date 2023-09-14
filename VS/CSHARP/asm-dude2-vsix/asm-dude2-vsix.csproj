@@ -3,7 +3,7 @@
 	<Import Sdk="Microsoft.NET.Sdk" Project="Sdk.props" />
 
 	<PropertyGroup>
-		<TargetFramework>net472</TargetFramework>
+		<TargetFramework>net48</TargetFramework>
 		<OutputType>Library</OutputType>
 		<OutputSubPath>MockLSPs\MockLanguageExtension</OutputSubPath>
 		<UseCodebase>true</UseCodebase>
@@ -72,13 +72,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <Content Remove="C:\Users\henkj\.nuget\packages\microsoft.vssdk.buildtools\17.7.2196\contentFiles\any\net472\LICENSE_SDKOOB.txt" />
-	  <Content Remove="C:\Users\henkj\.nuget\packages\microsoft.vssdk.buildtools\17.7.2196\contentFiles\any\net472\vsextensibilityicon.png" />
-	</ItemGroup>
-
-	<ItemGroup>
 	  <None Remove="AsmDude2.png" />
-	  <None Remove="C:\Users\henkj\.nuget\packages\microsoft.vssdk.buildtools\17.7.2196\contentFiles\any\net472\NOTICE.txt" />
 	  <None Remove="OptionsPage\AsmDudeOptionPageUI.xaml" />
 	</ItemGroup>
 
@@ -158,7 +152,7 @@
 
 	<Target Name="IncludeLanguageServers" BeforeTargets="GetVsixSourceItems">
 		<ItemGroup>
-			<Content Include="$(BaseOutputPath)\..\..\asm-dude2-ls\bin\$(Configuration)\net8.0-windows8.0\*.*" Visible="false">
+			<Content Include="$(BaseOutputPath)\..\..\asm-dude2-ls\bin\$(Configuration)\net7.0-windows\*.*" Visible="false">
 				<IncludeInVSIX>true</IncludeInVSIX>
 				<VsixSubPath>Server</VsixSubPath>
 			</Content>

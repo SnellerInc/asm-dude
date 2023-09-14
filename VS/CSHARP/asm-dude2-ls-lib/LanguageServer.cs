@@ -113,7 +113,6 @@ namespace AsmDude2LS
             this.target.OnInitialized += OnTargetInitialized;
         }
 
-
         #region Tools
 
         private static (int, int) FindWordBoundary(int position, string lineStr)
@@ -231,7 +230,10 @@ namespace AsmDude2LS
                 projects = new VSDiagnosticProjectInformation[] { projectAndContext };
             }
 
-            VSDiagnostic d = new()
+            Console.WriteLine($"ScheduleDiagnosticMessage {message}");
+
+
+            this.diagnostics.Add(new VSDiagnostic()
             {
                 Message = message,
                 Severity = severity,
@@ -245,9 +247,7 @@ namespace AsmDude2LS
                 Projects = projects,
                 //Identifier = $"{lineNumber},{offsetStart} {lineNumber},{offsetEnd}",
                 Tags = new DiagnosticTag[1] { (DiagnosticTag)AsmDiagnosticTag.IntellisenseError }
-            };
-
-            this.diagnostics.Add(d);
+            });
         }
 
         public string CurrentSettings
@@ -335,8 +335,9 @@ namespace AsmDude2LS
 
         public void OnTextDocumentOpened(DidOpenTextDocumentParams messageParams)
         {
-            this.textDocuments.Add(messageParams.TextDocument.Uri, messageParams.TextDocument);
-            this.UpdateInternals(messageParams.TextDocument.Uri);
+            var uri = messageParams.TextDocument.Uri;
+            this.textDocuments.Add(uri, messageParams.TextDocument);
+            this.UpdateInternals(uri);
         }
 
         public void OnTextDocumentClosed(DidCloseTextDocumentParams messageParams)
@@ -358,17 +359,22 @@ namespace AsmDude2LS
             LabelGraph labelGraph = new(lines, filename, this.traceSource, this.options);
 
 
-            foreach (var (key, value) in labelGraph.Label_Clashes)
+            foreach ((LabelID labelID, string msg) in labelGraph.Label_Clashes)
             {
-                LogInfo($"UpdateLabelGraph: found a label clash for label {value}");
-                //TextDocumentIdentifier id = null;
-                //Range range = null;
-                //this.ScheduleDiagnosticMessage("label clash", DiagnosticSeverity.Error, range, id);
+                LogInfo($"UpdateLabelGraph: found a label clash for label {msg}");
+                TextDocumentIdentifier id = null;
+                int lineNumber = labelID.LineNumber();
+                Range range = new()
+                {
+                    Start = new Position(lineNumber, labelID.Start_Pos()),
+                    End = new Position(lineNumber, labelID.End_Pos()),
+                };
+ //               this.ScheduleDiagnosticMessage(msg, DiagnosticSeverity.Error, range, id);
             }
 
-            foreach (var (key, value) in labelGraph.Undefined_Labels)
+            foreach ((LabelID labelID, string msg) in labelGraph.Undefined_Labels)
             {
-                LogInfo($"UpdateLabelGraph: found an undefined label {value}");
+                LogInfo($"UpdateLabelGraph: found an undefined label {msg}");
                 //TextDocumentIdentifier id = null;
                 //Range range = null;
                 //this.ScheduleDiagnosticMessage("undefined clash", DiagnosticSeverity.Error, range, id);
@@ -1469,7 +1475,7 @@ namespace AsmDude2LS
                         }
 
                         Rn reg = RegisterTools.ParseRn(keyword_uppercase, true);
-                        if (this.mnemonicStore.RegisterSwitchedOn(reg))
+                        if (this.mnemonicStore.IsRegisterSwitchedOn(reg))
                         {
                             string regStr = reg.ToString();
                             Arch arch = RegisterTools.GetArch(reg);

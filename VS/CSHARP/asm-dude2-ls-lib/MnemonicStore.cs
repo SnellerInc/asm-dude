@@ -23,6 +23,7 @@
 namespace AsmDude2LS
 {
     using System;
+    //using System.Collections.Frozen; TODO enable .NET 8
     using System.Collections.Generic;
     using System.Diagnostics;
     using System.IO;
@@ -36,15 +37,22 @@ namespace AsmDude2LS
 
     public class MnemonicStore
     {
-        private readonly Dictionary<Mnemonic, IList<AsmSignatureInformation>> data_;
-        private readonly Dictionary<Mnemonic, IList<Arch>> arch_;
-        private readonly Dictionary<Mnemonic, string> htmlRef_;
-        private readonly Dictionary<Mnemonic, string> description_;
         private readonly TraceSource traceSource;
         private readonly AsmLanguageServerOptions options;
 
+        private readonly Dictionary<Mnemonic, List<AsmSignatureInformation>> data_;
+        private readonly Dictionary<Mnemonic, List<Arch>> arch_;
+        private readonly Dictionary<Mnemonic, string> htmlRef_;
+        private readonly Dictionary<Mnemonic, string> description_;
         private readonly HashSet<Mnemonic> mnemonics_switched_on_;
         private readonly HashSet<Rn> register_switched_on_;
+
+        //private readonly FrozenDictionary<Mnemonic, List<AsmSignatureInformation>> data_;
+        //private readonly FrozenDictionary<Mnemonic, List<Arch>> arch_;
+        //private readonly FrozenDictionary<Mnemonic, string> htmlRef_;
+        //private readonly FrozenDictionary<Mnemonic, string> description_;
+        //private readonly FrozenSet<Mnemonic> mnemonics_switched_on_;
+        //private readonly FrozenSet<Rn> register_switched_on_;
 
         public MnemonicStore(string filename_RegularData, string filename_HandcraftedData, TraceSource traceSource, AsmLanguageServerOptions options)
         {
@@ -52,36 +60,21 @@ namespace AsmDude2LS
             this.options = options;
             LogInfo($"MnemonicStore: constructor: regularData = {filename_RegularData}; handcraftedData = {filename_HandcraftedData}");
 
-            this.data_ = new Dictionary<Mnemonic, IList<AsmSignatureInformation>>();
-            this.arch_ = new Dictionary<Mnemonic, IList<Arch>>();
-            this.htmlRef_ = new Dictionary<Mnemonic, string>();
-            this.description_ = new Dictionary<Mnemonic, string>();
-            if (File.Exists(filename_RegularData))
-            {
-                LoadRegularData(filename_RegularData);
-            } 
-            else
-            {
-                LogError($"MnemonicStore: constructor: regularData = {filename_RegularData} does not exist");
-            }
+            var (data, arch, htmlRef, description) = this.CalcSignatureInformation(filename_RegularData, filename_HandcraftedData);
 
-            if (filename_HandcraftedData != null)
-            {
-                if (File.Exists(filename_HandcraftedData))
-                {
-                    LoadHandcraftedData(filename_HandcraftedData);
-                }
-                else
-                {
-                    LogError($"MnemonicStore: constructor: handcraftedData = {filename_HandcraftedData} does not exist");
-                }
-            }
+            this.data_ = data;
+            this.arch_ = arch;
+            this.htmlRef_ = htmlRef;
+            this.description_ = description;
+            this.mnemonics_switched_on_ = this.CalcMnemonicsSwitchedOn();
+            this.register_switched_on_ = this.CalcRegisterSwitchedOn();
 
-            this.mnemonics_switched_on_ = new HashSet<Mnemonic>();
-            this.UpdateMnemonicSwitchedOn();
-
-            this.register_switched_on_ = new HashSet<Rn>();
-            this.UpdateRegisterSwitchedOn();
+            //this.data_ = FrozenDictionary.ToFrozenDictionary(data);
+            //this.arch_ = FrozenDictionary.ToFrozenDictionary(arch);
+            //this.htmlRef_ = FrozenDictionary.ToFrozenDictionary(htmlRef);
+            //this.description_ = FrozenDictionary.ToFrozenDictionary(description);
+            //this.mnemonics_switched_on_ = FrozenSet.ToFrozenSet(this.CalcMnemonicsSwitchedOn());
+            //this.register_switched_on_ = FrozenSet.ToFrozenSet(this.CalcRegisterSwitchedOn());
         }
 
         private void LogInfo(string msg)
@@ -107,34 +100,17 @@ namespace AsmDude2LS
 
         public IEnumerable<AsmSignatureInformation> GetSignatures(Mnemonic mnemonic)
         {
-            return this.data_.TryGetValue(mnemonic, out IList<AsmSignatureInformation> list) ? list : Enumerable.Empty<AsmSignatureInformation>();
+            return this.data_.TryGetValue(mnemonic, out List<AsmSignatureInformation> list) ? list : Enumerable.Empty<AsmSignatureInformation>();
         }
 
         public IEnumerable<Arch> GetArch(Mnemonic mnemonic)
         {
-            return this.arch_.TryGetValue(mnemonic, out IList<Arch> value) ? value : Enumerable.Empty<Arch>();
+            return this.arch_.TryGetValue(mnemonic, out List<Arch> value) ? value : Enumerable.Empty<Arch>();
         }
 
         public string GetHtmlRef(Mnemonic mnemonic)
         {
             return this.htmlRef_.TryGetValue(mnemonic, out string value) ? value : string.Empty;
-        }
-
-        public void SetHtmlRef(Mnemonic mnemonic, string value)
-        {
-            this.htmlRef_[mnemonic] = value;
-        }
-
-        public void SetDescription(Mnemonic mnemonic, string value)
-        {
-            this.description_[mnemonic] = value;
-            if (this.data_.ContainsKey(mnemonic))
-            {
-                foreach (AsmSignatureInformation e in this.data_[mnemonic])
-                {
-                    e.SignatureInformation.Documentation = value;
-                }
-            }
         }
 
         public string GetDescription(Mnemonic mnemonic)
@@ -145,7 +121,7 @@ namespace AsmDude2LS
         public override string ToString()
         {
             StringBuilder sb = new();
-            foreach (KeyValuePair<Mnemonic, IList<AsmSignatureInformation>> element in this.data_)
+            foreach (KeyValuePair<Mnemonic, List<AsmSignatureInformation>> element in this.data_)
             {
                 Mnemonic mnemonic = element.Key;
                 string s1 = mnemonic.ToString();
@@ -161,33 +137,6 @@ namespace AsmDude2LS
                 }
             }
             return sb.ToString();
-        }
-
-        /// <summary>
-        /// Add (and overwrite) return true if an existing signature element is overwritten;
-        /// </summary>
-        /// <param name="asmSignatureElement"></param>
-        private bool Add(AsmSignatureInformation asmSignatureElement)
-        {
-            //this.LogInfo($"MnemonicStore: Add: {asmSignatureElement.SignatureInformation.Label}; number of elements before {this.data_.Count}");
-
-            bool result = false;
-
-            if (this.data_.TryGetValue(asmSignatureElement.Mnemonic, out IList<AsmSignatureInformation> signatureElementList))
-            {
-                if (signatureElementList.Contains(asmSignatureElement))
-                {
-                    signatureElementList.Remove(asmSignatureElement);
-                    result = true;
-                }
-                signatureElementList.Add(asmSignatureElement);
-            }
-            else
-            {
-                this.data_.Add(asmSignatureElement.Mnemonic, new List<AsmSignatureInformation> { asmSignatureElement });
-            }
-            //this.LogInfo($"MnemonicStore: Add: number of elements after {this.data_.Count}");
-            return result;
         }
 
         private AsmSignatureInformation CreateAsmSignatureElement(Mnemonic mnemonic, string args, string arch, string sign, string doc)
@@ -300,255 +249,287 @@ namespace AsmDude2LS
             };
         }
 
-        private void LoadRegularData(string filename)
+        private (Dictionary<Mnemonic, List<AsmSignatureInformation>> data, Dictionary<Mnemonic, List<Arch>> arch, Dictionary<Mnemonic, string> htmlRef, Dictionary<Mnemonic, string> description) CalcSignatureInformation(string filename_RegularData, string filename_HandcraftedData)
         {
-            //AsmDudeToolsStatic.Output_INFO("MnemonicStore:loadRegularData: filename=" + filename);
-            try
-            {
-                StreamReader file = new(filename);
-                string line;
-                while ((line = file.ReadLine()) != null)
-                {
-                    if ((line.Length > 0) && (!line.StartsWith(";", StringComparison.Ordinal)))
-                    {
-                        string[] columns = line.Split('\t');
-                        if (columns.Length == 4)
-                        { // general description
-                            Mnemonic mnemonic = AsmSourceTools.ParseMnemonic(columns[1], false);
-                            if (mnemonic == Mnemonic.NONE)
-                            {
-                                // ignore the unknown mnemonic
-                                //AsmDudeToolsStatic.Output_WARNING("MnemonicStore:loadRegularData: unknown mnemonic in line: " + line);
-                            }
-                            else
-                            {
-                                if (!this.description_.ContainsKey(mnemonic))
-                                {
-                                    this.description_.Add(mnemonic, columns[2]);
-                                }
-                                else
-                                {
-                                    // this happens when the mnemonic is defined in multiple files, using the data from the first file
-                                    //AsmDudeToolsStatic.Output_WARNING("MnemonicStore:loadRegularData: mnemonic " + mnemonic + " already has a description");
-                                }
-                                if (!this.htmlRef_.ContainsKey(mnemonic))
-                                {
-                                    this.htmlRef_.Add(mnemonic, columns[3]);
-                                }
-                                else
-                                {
-                                    // this happens when the mnemonic is defined in multiple files, using the data from the first file
-                                    //AsmDudeToolsStatic.Output_WARNING("MnemonicStore:loadRegularData: mnemonic " + mnemonic + " already has a html ref");
-                                }
-                            }
-                        }
-                        else if ((columns.Length == 5) || (columns.Length == 6))
-                        { // signature description, ignore an old sixth column
-                            Mnemonic mnemonic = AsmSourceTools.ParseMnemonic(columns[0], false);
-                            if (mnemonic == Mnemonic.NONE)
-                            {
-                                LogWarning("MnemonicStore:loadRegularData: unknown mnemonic in line: " + line);
-                            }
-                            else
-                            {
-                                var se = this.CreateAsmSignatureElement(mnemonic, columns[1], columns[2], columns[3], columns[4]);
-                                //LogInfo($"MnemonicStore: adding AsmSignatureInformation {se.SignatureInformation.Label}");
-                                if (this.Add(se))
-                                {
-                                    LogWarning("MnemonicStore:loadRegularData: signature already exists" + se.ToString());
-                                }
-                            }
-                        }
-                        else
-                        {
-                            LogWarning("MnemonicStore:loadRegularData: s.Length=" + columns.Length + "; funky line" + line);
-                        }
-                    }
-                }
-                file.Close();
+            Dictionary<Mnemonic, List<AsmSignatureInformation>> data = new();
+            Dictionary<Mnemonic, List<Arch>> arch = new();
+            Dictionary<Mnemonic, string> htmlRef = new();
+            Dictionary<Mnemonic, string> description = new();
 
-                #region Fill Arch
-                foreach (KeyValuePair<Mnemonic, IList<AsmSignatureInformation>> pair in this.data_)
+            /// <summary>
+            /// Add (and overwrite) return true if an existing signature element is overwritten;
+            /// </summary>
+            /// <param name="asmSignatureElement"></param>
+            bool Add(AsmSignatureInformation asmSignatureElement, ref Dictionary<Mnemonic, List<AsmSignatureInformation>> data)
+            {
+                //this.LogInfo($"MnemonicStore: Add: {asmSignatureElement.SignatureInformation.Label}; number of elements before {this.data_.Count}");
+                bool result = false;
+
+                if (data.TryGetValue(asmSignatureElement.Mnemonic, out List<AsmSignatureInformation> signatureElementList))
                 {
-                    ISet<Arch> archs = new HashSet<Arch>();
-                    foreach (AsmSignatureInformation signatureElement in pair.Value)
+                    result = signatureElementList.Remove(asmSignatureElement);
+                    signatureElementList.Add(asmSignatureElement);
+                }
+                else
+                {
+                    data.Add(asmSignatureElement.Mnemonic, new List<AsmSignatureInformation> { asmSignatureElement });
+                }
+                //this.LogInfo($"MnemonicStore: Add: number of elements after {this.data_.Count}");
+                return result;
+            }
+
+            void LoadRegularData(
+                string filename,
+                ref Dictionary<Mnemonic, List<AsmSignatureInformation>> data,
+                ref Dictionary<Mnemonic, List<Arch>> arch,
+                ref Dictionary<Mnemonic, string> htmlRef,
+                ref Dictionary<Mnemonic, string> description)
+            {
+                // AsmDudeToolsStatic.Output_INFO("MnemonicStore:loadRegularData: filename=" + filename);
+                try
+                {
+                    StreamReader file = new(filename);
+                    string line;
+                    while ((line = file.ReadLine()) != null)
                     {
-                        if (signatureElement.Arch == null)
+                        if ((line.Length > 0) && (!line.StartsWith(";", StringComparison.Ordinal)))
                         {
-                            this.LogError("signatureElement.arch_ is null");
-                        } else
-                        {
-                            foreach (Arch arch in signatureElement.Arch)
-                            {
-                                if (arch == Arch.ARCH_NONE)
+                            string[] columns = line.Split('\t');
+                            if (columns.Length == 4)
+                            { // general description
+                                Mnemonic mnemonic = AsmSourceTools.ParseMnemonic(columns[1], false);
+                                if (mnemonic == Mnemonic.NONE)
                                 {
-                                   // LogWarning("MnemonicStore:loadRegularData: found ARCH NONE.");
+                                    // ignore the unknown mnemonic
+                                    // AsmDudeToolsStatic.Output_WARNING("MnemonicStore:loadRegularData: unknown mnemonic in line: " + line);
                                 }
                                 else
                                 {
-                                    archs.Add(arch);
+                                    if (!description.ContainsKey(mnemonic))
+                                    {
+                                        description.Add(mnemonic, columns[2]);
+                                    }
+                                    else
+                                    {
+                                        // this happens when the mnemonic is defined in multiple files, using the data from the first file
+                                        // AsmDudeToolsStatic.Output_WARNING("MnemonicStore:loadRegularData: mnemonic " + mnemonic + " already has a description");
+                                    }
+                                    if (!htmlRef.ContainsKey(mnemonic))
+                                    {
+                                        htmlRef.Add(mnemonic, columns[3]);
+                                    }
+                                    else
+                                    {
+                                        // this happens when the mnemonic is defined in multiple files, using the data from the first file
+                                        //  AsmDudeToolsStatic.Output_WARNING("MnemonicStore:loadRegularData: mnemonic " + mnemonic + " already has a html ref");
+                                    }
                                 }
+                            }
+                            else if ((columns.Length == 5) || (columns.Length == 6))
+                            { // signature description, ignore an old sixth column
+                                Mnemonic mnemonic = AsmSourceTools.ParseMnemonic(columns[0], false);
+                                if (mnemonic == Mnemonic.NONE)
+                                {
+                                    LogWarning("MnemonicStore:loadRegularData: unknown mnemonic in line: " + line);
+                                }
+                                else
+                                {
+                                    var se = CreateAsmSignatureElement(mnemonic, columns[1], columns[2], columns[3], columns[4]);
+                                    // LogInfo($"MnemonicStore: adding AsmSignatureInformation {se.SignatureInformation.Label}");
+                                    if (Add(se, ref data))
+                                    {
+                                        LogWarning("MnemonicStore:loadRegularData: signature already exists" + se.ToString());
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                LogWarning("MnemonicStore:loadRegularData: s.Length=" + columns.Length + "; funky line" + line);
                             }
                         }
                     }
-                    IList<Arch> list = new List<Arch>();
-                    foreach (Arch a in archs)
+                    file.Close();
+
+                    foreach ((Mnemonic key, List<AsmSignatureInformation> value) in data)
                     {
-                        list.Add(a);
+                        HashSet<Arch> archs = new();
+                        foreach (AsmSignatureInformation signatureElement in value)
+                        {
+                            archs.UnionWith(signatureElement.Arch);
+                        }
+                        arch[key] = archs.ToList();
                     }
-                    this.arch_[pair.Key] = list;
                 }
-                #endregion
+                catch (FileNotFoundException)
+                {
+                    this.LogError("MnemonicStore:loadRegularData: could not find file \"" + filename + "\".");
+                }
+                catch (Exception e)
+                {
+                    this.LogError("MnemonicStore:loadRegularData: error while reading file \"" + filename + "\"." + e);
+                }
             }
-            catch (FileNotFoundException)
+
+            void LoadHandcraftedData(
+                string filename,
+                ref Dictionary<Mnemonic, List<AsmSignatureInformation>> data,
+                ref Dictionary<Mnemonic, List<Arch>> arch,
+                ref Dictionary<Mnemonic, string> htmlRef,
+                ref Dictionary<Mnemonic, string> description)
             {
-                this.LogError("MnemonicStore:loadRegularData: could not find file \"" + filename + "\".");
+                // AsmDudeToolsStatic.Output_INFO("MnemonicStore:load_data_intel: filename=" + filename);
+                try
+                {
+                    StreamReader file = new(filename);
+                    string line;
+                    while ((line = file.ReadLine()) != null)
+                    {
+                        if ((line.Length > 0) && (!line.StartsWith(";", StringComparison.Ordinal)))
+                        {
+                            string[] columns = line.Split('\t');
+                            if (columns.Length == 4)
+                            { // general description
+                                Mnemonic mnemonic = AsmSourceTools.ParseMnemonic(columns[1], false);
+                                // LogInfo($"MnemonicStore:LoadHandcraftedData? line={line}, mnemonic={mnemonic}");
+
+                                if (mnemonic == Mnemonic.NONE)
+                                {
+                                    LogWarning("MnemonicStore:loadHandcraftedData: unknown mnemonic in line" + line);
+                                }
+                                else
+                                {
+                                    description.Remove(mnemonic);
+                                    // LogInfo($"MnemonicStore:LoadHandcraftedData adding description for mnemonic={mnemonic}; descr={columns[2]}");
+                                    description.Add(mnemonic, columns[2]);
+
+                                    htmlRef.Remove(mnemonic);
+                                    // LogInfo($"LoadHandcraftedData adding description for mnemonic={mnemonic}; url={columns[3]}");
+                                    htmlRef.Add(mnemonic, columns[3]);
+                                }
+                            }
+                            else if ((columns.Length == 5) || (columns.Length == 6))
+                            { // signature description, ignore an old sixth column
+                                Mnemonic mnemonic = AsmSourceTools.ParseMnemonic(columns[0], false);
+                                if (mnemonic == Mnemonic.NONE)
+                                {
+                                    LogWarning("MnemonicStore:loadHandcraftedData: unknown mnemonic in line" + line);
+                                }
+                                else
+                                {
+                                    var se = CreateAsmSignatureElement(mnemonic, columns[1], columns[2], columns[3], columns[4]);
+                                    // LogInfo($"MnemonicStore: LoadHandcraftedData: adding AsmSignatureInformation {se.SignatureInformation.Label}");
+                                    if (Add(se, ref data))
+                                    {
+                                        LogWarning("MnemonicStore:LoadHandcraftedData: signature already exists" + se.ToString());
+                                    }
+                                }
+                            }
+                            else
+                            {
+                               LogWarning("MnemonicStore:loadHandcraftedData: s.Length=" + columns.Length + "; funky line" + line);
+                            }
+                        }
+                    }
+                    file.Close();
+
+                    foreach ((Mnemonic key, List<AsmSignatureInformation> value) in data)
+                    {
+                        HashSet<Arch> archs = new();
+                        foreach (AsmSignatureInformation signatureElement in value)
+                        {
+                            archs.UnionWith(signatureElement.Arch);
+                        }
+                        arch[key] = archs.ToList();
+                    }
+                }
+                catch (FileNotFoundException)
+                {
+                    LogError("MnemonicStore:LoadHandcraftedData: could not find file \"" + filename + "\".");
+                }
+                catch (Exception e)
+                {
+                    LogError("MnemonicStore:LoadHandcraftedData: error while reading file \"" + filename + "\"." + e);
+                }
             }
-            catch (Exception e)
+
+            if (File.Exists(filename_RegularData))
             {
-                this.LogError("MnemonicStore:loadRegularData: error while reading file \"" + filename + "\"." + e);
+                LoadRegularData(filename_RegularData, ref data, ref arch, ref htmlRef, ref description);
             }
+            else
+            {
+                LogError($"MnemonicStore: constructor: regularData = {filename_RegularData} does not exist");
+            }
+
+            if (filename_HandcraftedData != null)
+            {
+                if (File.Exists(filename_HandcraftedData))
+                {
+                    LoadHandcraftedData(filename_HandcraftedData, ref data, ref arch, ref htmlRef, ref description);
+                }
+                else
+                {
+                    LogError($"MnemonicStore: constructor: handcraftedData = {filename_HandcraftedData} does not exist");
+                }
+            }
+            return (data, arch, htmlRef, description);
         }
 
-        private void LoadHandcraftedData(string filename)
-        {
-            //AsmDudeToolsStatic.Output_INFO("MnemonicStore:load_data_intel: filename=" + filename);
-            try
-            {
-                StreamReader file = new(filename);
-                string line;
-                while ((line = file.ReadLine()) != null)
-                {
-                    if ((line.Length > 0) && (!line.StartsWith(";", StringComparison.Ordinal)))
-                    {
-                        string[] columns = line.Split('\t');
-                        if (columns.Length == 4)
-                        { // general description
-                            Mnemonic mnemonic = AsmSourceTools.ParseMnemonic(columns[1], false);
-
-                            //LogInfo($"MnemonicStore:LoadHandcraftedData? line={line}, mnemonic={mnemonic}");
-
-                            if (mnemonic == Mnemonic.NONE)
-                            {
-                                LogWarning("MnemonicStore:loadHandcraftedData: unknown mnemonic in line" + line);
-                            }
-                            else
-                            {
-                                this.description_.Remove(mnemonic);
-                                //LogInfo($"MnemonicStore:LoadHandcraftedData adding description for mnemonic={mnemonic}; descr={columns[2]}");
-                                this.description_.Add(mnemonic, columns[2]);
-
-                                this.htmlRef_.Remove(mnemonic);
-                                //LogInfo($"LoadHandcraftedData adding description for mnemonic={mnemonic}; url={columns[3]}");
-                                this.htmlRef_.Add(mnemonic, columns[3]);
-                            }
-                        }
-                        else if ((columns.Length == 5) || (columns.Length == 6))
-                        { // signature description, ignore an old sixth column
-                            Mnemonic mnemonic = AsmSourceTools.ParseMnemonic(columns[0], false);
-                            if (mnemonic == Mnemonic.NONE)
-                            {
-                                LogWarning("MnemonicStore:loadHandcraftedData: unknown mnemonic in line" + line);
-                            }
-                            else
-                            {
-                                var se = this.CreateAsmSignatureElement(mnemonic, columns[1], columns[2], columns[3], columns[4]);
-                                //LogInfo($"MnemonicStore: LoadHandcraftedData: adding AsmSignatureInformation {se.SignatureInformation.Label}");
-                                if (this.Add(se))
-                                {
-                                    LogWarning("MnemonicStore:LoadHandcraftedData: signature already exists" + se.ToString());
-                                }
-                            }
-                        }
-                        else
-                        {
-                            LogWarning("MnemonicStore:loadHandcraftedData: s.Length=" + columns.Length + "; funky line" + line);
-                        }
-                    }
-                }
-                file.Close();
-
-                #region Fill Arch
-                foreach (KeyValuePair<Mnemonic, IList<AsmSignatureInformation>> pair in this.data_)
-                {
-                    ISet<Arch> archs = new HashSet<Arch>();
-                    foreach (AsmSignatureInformation signatureElement in pair.Value)
-                    {
-                        foreach (Arch arch in signatureElement.Arch)
-                        {
-                            archs.Add(arch);
-                        }
-                    }
-                    IList<Arch> list = new List<Arch>();
-                    foreach (Arch a in archs)
-                    {
-                        list.Add(a);
-                    }
-                    this.arch_[pair.Key] = list;
-                }
-                #endregion
-            }
-            catch (FileNotFoundException)
-            {
-                this.LogError("MnemonicStore:LoadHandcraftedData: could not find file \"" + filename + "\".");
-            }
-            catch (Exception e)
-            {
-                this.LogError("MnemonicStore:LoadHandcraftedData: error while reading file \"" + filename + "\"." + e);
-            }
-        }
-
-        public bool MnemonicSwitchedOn(Mnemonic mnemonic)
+        public bool IsMnemonicSwitchedOn(Mnemonic mnemonic)
         {
             return this.mnemonics_switched_on_.Contains(mnemonic);
         }
 
-        public IEnumerable<Mnemonic> Get_Allowed_Mnemonics()
+        public HashSet<Mnemonic> Get_Allowed_Mnemonics()
         {
             return this.mnemonics_switched_on_;
         }
 
-        public void UpdateMnemonicSwitchedOn()
+        private HashSet<Mnemonic> CalcMnemonicsSwitchedOn()
         {
-            this.mnemonics_switched_on_.Clear();
-            ISet<Arch> selectedArchs = this.options.Get_Arch_Switched_On();
+            HashSet<Mnemonic> result = new();
+
+            ISet<Arch> arch_switched_on = this.options.Get_Arch_Switched_On();
             foreach (Mnemonic mnemonic in Enum.GetValues(typeof(Mnemonic)))
             {
                 foreach (Arch a in this.GetArch(mnemonic))
                 {
-                    if (selectedArchs.Contains(a))
+                    if (arch_switched_on.Contains(a))
                     {
-                        this.mnemonics_switched_on_.Add(mnemonic);
+                        result.Add(mnemonic);
                         break;
                     }
                 }
             }
+            return result;
         }
 
-        public bool RegisterSwitchedOn(Rn reg)
+        public bool IsRegisterSwitchedOn(Rn reg)
         {
             return this.register_switched_on_.Contains(reg);
         }
 
-        public IEnumerable<Rn> Get_Allowed_Registers()
+        public HashSet<Rn> Get_Allowed_Registers()
         {
             return this.register_switched_on_;
         }
 
-        public void UpdateRegisterSwitchedOn()
+        private HashSet<Rn> CalcRegisterSwitchedOn()
         {
-            this.register_switched_on_.Clear();
-            ISet<Arch> selectedArchs = this.options.Get_Arch_Switched_On();
+            HashSet<Rn> result = new();
+
+            ISet<Arch> arch_switched_on = this.options.Get_Arch_Switched_On();
             foreach (Rn reg in Enum.GetValues(typeof(Rn)))
             {
                 if (reg != Rn.NOREG)
                 {
-                    if (selectedArchs.Contains(RegisterTools.GetArch(reg)))
+                    if (arch_switched_on.Contains(RegisterTools.GetArch(reg)))
                     {
-                        this.register_switched_on_.Add(reg);
+                        result.Add(reg);
                     }
                 }
             }
+            return result;
         }
     }
 }
