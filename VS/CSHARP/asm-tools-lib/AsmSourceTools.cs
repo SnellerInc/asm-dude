@@ -75,10 +75,11 @@ namespace AsmTools
                     // Console.WriteLine("found remark " + remark);
                 }
 
-                string codeStr_uppercase = line.Substring(codeBeginPos, codeEndPos - codeBeginPos).Trim().ToUpperInvariant();
+                string codeStr = line.Substring(codeBeginPos, codeEndPos - codeBeginPos).Trim();
                 // Console.WriteLine("code string \"" + codeStr + "\".");
-                if (codeStr_uppercase.Length > 0)
+                if (codeStr.Length > 0)
                 {
+                    string codeStr_uppercase = codeStr.ToUpperInvariant();
                     // Console.WriteLine(codeStr + ":" + codeStr.Length);
 
                     // get the first keyword, check if it is a mnemonic
@@ -97,7 +98,7 @@ namespace AsmTools
                             case Mnemonic.REPNE:
                             case Mnemonic.REPNZ:
                                 {
-                                    // find a second keyword starting a postion keywordPos.EndPos
+                                    // find a second keyword starting a position keywordPos.EndPos
                                     (int beginPos, int endPos) keyword2Pos = GetKeywordPos(keyword1Pos.endPos + 1, codeStr_uppercase); // find a keyword starting a position 0
                                     string keyword2 = codeStr_uppercase.Substring(keyword2Pos.beginPos, keyword2Pos.endPos - keyword2Pos.beginPos);
                                     if (keyword2.Length > 0)
@@ -115,16 +116,14 @@ namespace AsmTools
                         }
 
                         // find arguments after the last mnemonic
-                        if (codeStr_uppercase.Length > 0)
+
+                        int argLength = codeStr.Length - startArgPos;
+                        if (argLength > 0)
                         {
-                            string argsStr = codeStr_uppercase.Substring(startArgPos, codeStr_uppercase.Length - startArgPos);
-                            if (argsStr.Length > 0)
+                            args = codeStr.Substring(startArgPos, argLength).Split(',');
+                            for (int i = 0; i < args.Length; ++i)
                             {
-                                args = argsStr.Split(',');
-                                for (int i = 0; i < args.Length; ++i)
-                                {
-                                    args[i] = args[i].Trim();
-                                }
+                                args[i] = args[i].Trim();
                             }
                         }
                     }

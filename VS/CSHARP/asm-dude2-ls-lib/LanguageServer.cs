@@ -40,6 +40,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Interop;
 
 using Range = Microsoft.VisualStudio.LanguageServer.Protocol.Range;
 
@@ -350,36 +351,61 @@ namespace AsmDude2LS
         private void UpdateLabelGraph(Uri uri)
         {
             LogInfo("UpdateLabelGraph");
-
             this.labelGraphs.Remove(uri);
 
             var textDocument = this.GetTextDocument(uri);
             string filename = textDocument.Uri.LocalPath;
             string[] lines = this.GetLines(uri);
-            LabelGraph labelGraph = new(lines, filename, this.traceSource, this.options);
+            bool caseSensitiveLabels = true; //nasm has case sensitive labels
+            LabelGraph labelGraph = new(lines, filename, caseSensitiveLabels, this.traceSource, this.options);
 
-
-            foreach ((LabelID labelID, string msg) in labelGraph.Label_Clashes)
+            foreach (List<LabelID> clashes in labelGraph.Label_Clashes)
             {
-                LogInfo($"UpdateLabelGraph: found a label clash for label {msg}");
-                TextDocumentIdentifier id = null;
-                int lineNumber = labelID.LineNumber();
-                Range range = new()
+                foreach (LabelID labelID in clashes)
                 {
-                    Start = new Position(lineNumber, labelID.Start_Pos()),
-                    End = new Position(lineNumber, labelID.End_Pos()),
-                };
- //               this.ScheduleDiagnosticMessage(msg, DiagnosticSeverity.Error, range, id);
-            }
+                    try
+                    {
+                        TextDocumentIdentifier id = null;
+                        int lineNumber = labelID.LineNumber;
+                        Range range = new()
+                        {
+                            Start = new Position(lineNumber, labelID.Start_Pos),
+                            End = new Position(lineNumber, labelID.End_Pos),
+                        };
 
-            foreach ((LabelID labelID, string msg) in labelGraph.Undefined_Labels)
+                        //TODO handle labels from other files
+                        string lineStr = this.GetLines(uri)[lineNumber];
+                        string labelStr = lineStr[labelID.Start_Pos..labelID.End_Pos];
+                        string msg = $"The label '{labelStr}' is a duplicate ({clashes.Count} definitions found).";
+                        this.ScheduleDiagnosticMessage(msg, DiagnosticSeverity.Error, range, id);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogError(ex.ToString());
+                    }
+                }
+            }
+            foreach (LabelID labelID in labelGraph.Undefined_Labels)
             {
-                LogInfo($"UpdateLabelGraph: found an undefined label {msg}");
-                //TextDocumentIdentifier id = null;
-                //Range range = null;
-                //this.ScheduleDiagnosticMessage("undefined clash", DiagnosticSeverity.Error, range, id);
+                try
+                {
+                    TextDocumentIdentifier id = null;
+                    int lineNumber = labelID.LineNumber;
+                    Range range = new()
+                    {
+                        Start = new Position(lineNumber, labelID.Start_Pos),
+                        End = new Position(lineNumber, labelID.End_Pos),
+                    };
+                    //TODO handle labels from other files
+                    string lineStr = this.GetLines(uri)[lineNumber];
+                    string labelStr = lineStr[labelID.Start_Pos..labelID.End_Pos];
+                    string msg = $"No such label '{labelStr}'.";
+                    this.ScheduleDiagnosticMessage(msg, DiagnosticSeverity.Error, range, id);
+                } catch (Exception ex)
+                {
+                    LogError(ex.ToString());
+                }
             }
-
             this.labelGraphs.Add(uri, labelGraph);
         }
 
