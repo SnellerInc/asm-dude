@@ -20,7 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-namespace AsmDude2
+namespace AsmTools
 {
     using System;
     using System.Collections.Generic;
@@ -30,12 +30,6 @@ namespace AsmDude2
     using System.IO;
     using System.Xml;
 
-    using AsmDude2.Tools;
-
-    using AsmTools;
-
-    using Microsoft.VisualStudio.Shell;
-
     public sealed class AsmDude2Tools : IDisposable
     {
         private XmlDocument xmlData_;
@@ -44,29 +38,36 @@ namespace AsmDude2
         private IDictionary<string, Arch> arch_;
         private IDictionary<string, string> description_;
   
-        #region Singleton Stuff
-        private static readonly Lazy<AsmDude2Tools> Lazy = new Lazy<AsmDude2Tools>(() => new AsmDude2Tools());
 
-        public static AsmDude2Tools Instance { get { return Lazy.Value; } }
-        #endregion Singleton Stuff
+        public static AsmDude2Tools Create(string path)
+        {
+            if (Instance == null)
+            {
+                Instance = new AsmDude2Tools(path);
+            }
+            return Instance;
+        }
+
+        private static AsmDude2Tools Instance
+        {
+            get; 
+            set; 
+        }
 
         /// <summary>
         /// Singleton pattern: use AsmDudeTools.Instance for the instance of this class
         /// </summary>
-        private AsmDude2Tools()
+        private AsmDude2Tools(string path)
         {
-            AsmDudeToolsStatic.Output_INFO("AsmDude2Tools: constructor");
-
-            ThreadHelper.ThrowIfNotOnUIThread();
-
-            this.Init_Data();
-         }
+            this.Init_Data(path);
+        }
 
         #region Public Methods
 
         public AsmTokenType Get_Token_Type_Att(string keyword)
         {
             Contract.Requires(keyword != null);
+            Contract.Assume(keyword != null);
             Contract.Requires(keyword == keyword.ToUpperInvariant());
 
             int length = keyword.Length;
@@ -115,6 +116,7 @@ namespace AsmDude2
         public AsmTokenType Get_Token_Type_Intel(string keyword)
         {
             Contract.Requires(keyword != null);
+            Contract.Assume(keyword != null);
             Contract.Requires(keyword == keyword.ToUpperInvariant());
 
             Mnemonic mnemonic = AsmSourceTools.ParseMnemonic(keyword, true);
@@ -150,20 +152,20 @@ namespace AsmDude2
 
         #region Private Methods
 
-        private void Init_Data()
+        private void Init_Data(string path)
         {
             this.type_ = new Dictionary<string, AsmTokenType>();
             this.arch_ = new Dictionary<string, Arch>();
             this.assembler_ = new Dictionary<string, AssemblerEnum>();
             this.description_ = new Dictionary<string, string>();
             // fill the dictionary with keywords
-            XmlDocument xmlDoc = this.Get_Xml_Data();
+            XmlDocument xmlDoc = this.Get_Xml_Data(path);
             foreach (XmlNode node in xmlDoc.SelectNodes("//misc"))
             {
                 XmlAttribute nameAttribute = node.Attributes["name"];
                 if (nameAttribute == null)
                 {
-                    AsmDudeToolsStatic.Output_WARNING("AsmDudeTools:Init_Data: found misc with no name");
+                    //AsmDudeToolsStatic.Output_WARNING("AsmDudeTools:Init_Data: found misc with no name");
                 }
                 else
                 {
@@ -178,7 +180,7 @@ namespace AsmDude2
                 XmlAttribute nameAttribute = node.Attributes["name"];
                 if (nameAttribute == null)
                 {
-                    AsmDudeToolsStatic.Output_WARNING("AsmDudeTools:Init_Data: found directive with no name");
+                    //AsmDudeToolsStatic.Output_WARNING("AsmDudeTools:Init_Data: found directive with no name");
                 }
                 else
                 {
@@ -194,7 +196,7 @@ namespace AsmDude2
                 XmlAttribute nameAttribute = node.Attributes["name"];
                 if (nameAttribute == null)
                 {
-                    AsmDudeToolsStatic.Output_WARNING("AsmDudeTools:Init_Data: found register with no name");
+                    //AsmDudeToolsStatic.Output_WARNING("AsmDudeTools:Init_Data: found register with no name");
                 }
                 else
                 {
@@ -209,7 +211,7 @@ namespace AsmDude2
                 XmlAttribute nameAttribute = node.Attributes["name"];
                 if (nameAttribute == null)
                 {
-                    AsmDudeToolsStatic.Output_WARNING("AsmDudeTools:Init_Data: found userdefined1 with no name");
+                    //AsmDudeToolsStatic.Output_WARNING("AsmDudeTools:Init_Data: found userdefined1 with no name");
                 }
                 else
                 {
@@ -223,7 +225,7 @@ namespace AsmDude2
                 XmlAttribute nameAttribute = node.Attributes["name"];
                 if (nameAttribute == null)
                 {
-                    AsmDudeToolsStatic.Output_WARNING("AsmDudeTools:Init_Data: found userdefined2 with no name");
+                    //AsmDudeToolsStatic.Output_WARNING("AsmDudeTools:Init_Data: found userdefined2 with no name");
                 }
                 else
                 {
@@ -237,7 +239,7 @@ namespace AsmDude2
                 XmlAttribute nameAttribute = node.Attributes["name"];
                 if (nameAttribute == null)
                 {
-                    AsmDudeToolsStatic.Output_WARNING("AsmDudeTools:Init_Data: found userdefined3 with no name");
+                    //AsmDudeToolsStatic.Output_WARNING("AsmDudeTools:Init_Data: found userdefined3 with no name");
                 }
                 else
                 {
@@ -293,12 +295,12 @@ namespace AsmDude2
             }
         }
 
-        private XmlDocument Get_Xml_Data()
+        private XmlDocument Get_Xml_Data(string path)
         {
             //Debug.WriteLine(string.Format(CultureInfo.CurrentCulture, "INFO: {0}:getXmlData", this.ToString()));
             if (this.xmlData_ == null)
             {
-                string filename = Path.Combine(AsmDudeToolsStatic.Get_Install_Path(), "Resources", "AsmDudeData.xml");
+                string filename = Path.Combine(path, "Resources", "AsmDudeData.xml");
                 Debug.WriteLine(string.Format(CultureInfo.CurrentCulture, "INFO: AsmDudeTools:getXmlData: going to load file \"{0}\"", filename));
                 try
                 {
@@ -311,15 +313,15 @@ namespace AsmDude2
                 }
                 catch (FileNotFoundException)
                 {
-                    AsmDudeToolsStatic.Output_ERROR("AsmTokenTagger: could not find file \"" + filename + "\".");
+                    //AsmDudeToolsStatic.Output_ERROR("AsmTokenTagger: could not find file \"" + filename + "\".");
                 }
                 catch (XmlException)
                 {
-                    AsmDudeToolsStatic.Output_ERROR("AsmTokenTagger: xml error while reading file \"" + filename + "\".");
+                    //AsmDudeToolsStatic.Output_ERROR("AsmTokenTagger: xml error while reading file \"" + filename + "\".");
                 }
                 catch (Exception e)
                 {
-                    AsmDudeToolsStatic.Output_ERROR("AsmTokenTagger: error while reading file \"" + filename + "\"." + e);
+                    //AsmDudeToolsStatic.Output_ERROR("AsmTokenTagger: error while reading file \"" + filename + "\"." + e);
                 }
             }
             return this.xmlData_;

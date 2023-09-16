@@ -948,7 +948,10 @@ namespace AsmDude2
             {
                 Settings.Default.Save();
                 //await ClearMefCache.ClearMefCache.ClearAsync().ConfigureAwait(false); // use .ConfigureAwait(false) to signal your intention for continuation.
-                await AsmLanguageClient.Instance.RestartServerAsync();
+                if (AsmLanguageClient.Instance != null)
+                {
+                    await AsmLanguageClient.Instance.RestartServerAsync();
+                }
             }
         }
 
