@@ -34,6 +34,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.Contracts;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -41,6 +42,8 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Interop;
+
+using static System.Net.WebRequestMethods;
 
 using Range = Microsoft.VisualStudio.LanguageServer.Protocol.Range;
 
@@ -66,6 +69,8 @@ namespace AsmDude2LS
 
         private readonly Dictionary<Uri, TextDocumentItem> textDocuments;
         private readonly Dictionary<Uri, string[]> textDocumentLines;
+        private readonly Dictionary<Uri, KeywordID[][]> parsedDocuments;
+
         private readonly Dictionary<Uri, IEnumerable<AsmFoldingRange>> foldingRanges;
         private readonly Dictionary<Uri, LabelGraph> labelGraphs;
 
@@ -85,16 +90,16 @@ namespace AsmDude2LS
         public LanguageServer(Stream sender, Stream reader)
         {
             this.traceSource = LogUtils.CreateTraceSource();
-            //LogInfo("LanguageServer: constructor"); // This line produces a crash
+            //LogInfo("LanguageServer: constructor"); // This lineNumber produces a crash
             this.target = new LanguageServerTarget(this, traceSource);
             this.textDocuments = new Dictionary<Uri, TextDocumentItem>();
             this.textDocumentLines = new Dictionary<Uri, string[]>();
+            this.parsedDocuments = new Dictionary<Uri, KeywordID[][]>();
 
             this.labelGraphs = new Dictionary<Uri, LabelGraph>();
             this.foldingRanges = new Dictionary<Uri, IEnumerable<AsmFoldingRange>>();
             this.diagnostics = new List<Diagnostic>();
             this.Symbols = Array.Empty<VSSymbolInformation>();
-
 
             this.messageHandler = new HeaderDelimitedMessageHandler(sender, reader);
             this.rpc = new JsonRpc(this.messageHandler, this.target);
@@ -204,16 +209,10 @@ namespace AsmDude2LS
             return null;
         }
 
-        private void ScheduleDiagnosticMessage(
-            string message,
-            DiagnosticSeverity severity,
-            Range range,
-            TextDocumentIdentifier textDocumentIdentifier)
+        public static VSDiagnosticProjectInformation[] GetVSDiagnosticProjectInformation(VSTextDocumentIdentifier vsTextDocumentIdentifier)
         {
             VSDiagnosticProjectInformation projectAndContext = null;
-            if (textDocumentIdentifier != null
-                && textDocumentIdentifier is VSTextDocumentIdentifier vsTextDocumentIdentifier
-                && vsTextDocumentIdentifier.ProjectContext != null)
+            if ((vsTextDocumentIdentifier != null) && (vsTextDocumentIdentifier.ProjectContext != null))
             {
                 projectAndContext = new VSDiagnosticProjectInformation
                 {
@@ -222,17 +221,16 @@ namespace AsmDude2LS
                     Context = "Win32"
                 };
             }
+            return (projectAndContext == null) ? null : new VSDiagnosticProjectInformation[] { projectAndContext };
+        }
 
-            VSDiagnosticProjectInformation[] projects = null;
-
-
-            if (projectAndContext != null)
-            {
-                projects = new VSDiagnosticProjectInformation[] { projectAndContext };
-            }
-
+        private void ScheduleDiagnosticMessage(
+            string message,
+            DiagnosticSeverity severity,
+            Range range,
+            VSTextDocumentIdentifier vsTextDocumentIdentifier)
+        {
             Console.WriteLine($"ScheduleDiagnosticMessage {message}");
-
 
             this.diagnostics.Add(new VSDiagnostic()
             {
@@ -245,7 +243,7 @@ namespace AsmDude2LS
                 //    Href = new Uri("https://www.microsoft.com")
                 //},
 
-                Projects = projects,
+                Projects = GetVSDiagnosticProjectInformation(vsTextDocumentIdentifier),
                 //Identifier = $"{lineNumber},{offsetStart} {lineNumber},{offsetEnd}",
                 Tags = new DiagnosticTag[1] { (DiagnosticTag)AsmDiagnosticTag.IntellisenseError }
             });
@@ -287,11 +285,7 @@ namespace AsmDude2LS
 
         public void Initialize(AsmLanguageServerOptions options)
         {
-            if (options == null)
-            {
-                LogError($"LanguageServer: Initialize: InitializationOptions is null");
-                return;
-            }
+            Contract.Assert(options != null);
             // LogInfo($"Initialize: Options: {jToken}");
             this.options = options;
         }
@@ -319,7 +313,17 @@ namespace AsmDude2LS
             if (document != null)
             {
                 this.textDocumentLines.Remove(uri);
-                this.textDocumentLines.Add(uri, document.Text.Split(new string[] { Environment.NewLine }, StringSplitOptions.None));
+                var lines = document.Text.Split(new string[] { Environment.NewLine }, StringSplitOptions.None);
+                this.textDocumentLines.Add(uri, lines);
+
+                int fileID = 0; //TODO
+                KeywordID[][] lineData = new KeywordID[lines.Length][];
+                for (int lineNumber = 0; lineNumber < lines.Length; ++lineNumber)
+                {
+                    (KeywordID[] keywords, string label, Mnemonic mnemonic, string[] args, string remark) = AsmTools.AsmSourceTools.ParseLine(lines[lineNumber], lineNumber, fileID);
+                    lineData[lineNumber] = keywords;
+                }
+
                 this.diagnostics.Clear();
                 this.UpdateFoldingRanges(uri);
                 this.UpdateLabelGraph(uri);
@@ -358,54 +362,8 @@ namespace AsmDude2LS
             string[] lines = this.GetLines(uri);
             bool caseSensitiveLabels = true; //nasm has case sensitive labels
             LabelGraph labelGraph = new(lines, filename, caseSensitiveLabels, this.traceSource, this.options);
-
-            foreach (List<LabelID> clashes in labelGraph.Label_Clashes)
-            {
-                foreach (LabelID labelID in clashes)
-                {
-                    try
-                    {
-                        TextDocumentIdentifier id = null;
-                        int lineNumber = labelID.LineNumber;
-                        Range range = new()
-                        {
-                            Start = new Position(lineNumber, labelID.Start_Pos),
-                            End = new Position(lineNumber, labelID.End_Pos),
-                        };
-
-                        //TODO handle labels from other files
-                        string lineStr = this.GetLines(uri)[lineNumber];
-                        string labelStr = lineStr[labelID.Start_Pos..labelID.End_Pos];
-                        string msg = $"The label '{labelStr}' is a duplicate ({clashes.Count} definitions found).";
-                        this.ScheduleDiagnosticMessage(msg, DiagnosticSeverity.Error, range, id);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogError(ex.ToString());
-                    }
-                }
-            }
-            foreach (LabelID labelID in labelGraph.Undefined_Labels)
-            {
-                try
-                {
-                    TextDocumentIdentifier id = null;
-                    int lineNumber = labelID.LineNumber;
-                    Range range = new()
-                    {
-                        Start = new Position(lineNumber, labelID.Start_Pos),
-                        End = new Position(lineNumber, labelID.End_Pos),
-                    };
-                    //TODO handle labels from other files
-                    string lineStr = this.GetLines(uri)[lineNumber];
-                    string labelStr = lineStr[labelID.Start_Pos..labelID.End_Pos];
-                    string msg = $"No such label '{labelStr}'.";
-                    this.ScheduleDiagnosticMessage(msg, DiagnosticSeverity.Error, range, id);
-                } catch (Exception ex)
-                {
-                    LogError(ex.ToString());
-                }
-            }
+            labelGraph.UpdateDiagnostics();
+            this.diagnostics.AddRange(labelGraph.Diagnostics);
             this.labelGraphs.Add(uri, labelGraph);
         }
 
@@ -453,7 +411,7 @@ namespace AsmDude2LS
                         if (startLineNumbers.Count == 0)
                         {
                             var severity = DiagnosticSeverity.Warning;
-                            TextDocumentIdentifier textDocumentIdentifier = null;//TODO
+                            VSTextDocumentIdentifier textDocumentIdentifier = null;//TODO
 
                             string message = $"keyword {EndKeyword} has no matching {StartKeyword} keyword";
                             Range range = new()
@@ -874,10 +832,12 @@ namespace AsmDude2LS
             }
 
             var lines = this.GetLines(parameter.TextDocument.Uri);
-            string lineStr = lines[parameter.Position.Line];
-            LogInfo($"OnTextDocumentSignatureHelp: parameter={parameter}; line=\"{lineStr}\";");
+            int lineNumber = parameter.Position.Line;
+            string lineStr = lines[lineNumber];
+            LogInfo($"OnTextDocumentSignatureHelp: parameter={parameter}; lineNumber=\"{lineStr}\";");
 
-            (string _, Mnemonic mnemonic, string[] _, string remark) = AsmTools.AsmSourceTools.ParseLine(lineStr);
+            int fileID = 0; //TODO
+            (object _, string _, Mnemonic mnemonic, string[] _, string remark) = AsmTools.AsmSourceTools.ParseLine(lineStr, lineNumber, fileID);
             if ((mnemonic == Mnemonic.NONE) || (remark.Length > 0))
             {
                 return null;
@@ -904,7 +864,7 @@ namespace AsmDude2LS
                 string argsStr = lineStr.Substring(offset, length);
                 args = argsStr.Split(',');
             }
-            LogInfo($"OnTextDocumentSignatureHelp: current line: line=\"{lineStr}\"; mnemonic={mnemonic}, args={string.Join(",", args)}");
+            LogInfo($"OnTextDocumentSignatureHelp: current lineNumber: lineNumber=\"{lineStr}\"; mnemonic={mnemonic}, args={string.Join(",", args)}");
 
             IList<Operand> operands = AsmTools.AsmSourceTools.MakeOperands(args);
             ISet<Arch> selectedArchitectures = this.options.Get_Arch_Switched_On();
@@ -1220,7 +1180,8 @@ namespace AsmDude2LS
             }
 
             var lines = this.GetLines(parameter.TextDocument.Uri);
-            string lineStr = lines[parameter.Position.Line];
+            int lineNumber = parameter.Position.Line;
+            string lineStr = lines[lineNumber];
             // LogInfo($"OnTextDocumentCompletion: lineStr: \"{lineStr}\"");
 
             int pos = parameter.Position.Character - 1;
@@ -1231,7 +1192,8 @@ namespace AsmDude2LS
             {
                 return new CompletionList();
             }
-            (string label, Mnemonic mnemonic, string[] args, string remark) = AsmTools.AsmSourceTools.ParseLine(lineStr);
+            int fileID = 0; //TODO
+            (object _, string label, Mnemonic mnemonic, string[] args, string remark) = AsmTools.AsmSourceTools.ParseLine(lineStr, lineNumber, fileID);
             LogInfo($"OnTextDocumentCompletion: label={label}; mnemonic={mnemonic}; args={args}; remark={remark}");
 
             List<CompletionItem> items = new();
@@ -1252,7 +1214,7 @@ namespace AsmDude2LS
                 }
                 else
                 {
-                    // the line contains a mnemonic but we are not in a comment
+                    // the lineNumber contains a mnemonic but we are not in a comment
                     if (AsmTools.AsmSourceTools.IsJump(mnemonic))
                     {
                         var labelGraph = this.GetLabelGraph(parameter.TextDocument.Uri);
@@ -1752,10 +1714,12 @@ namespace AsmDude2LS
             IList<VSSymbolInformation> symbolInfo = new List<VSSymbolInformation>();
             var lines = this.GetLines(uri);
 
-            for (int line = 0; line < lines.Length; ++line)
+            int fileID = 0; //TODO
+
+            for (int lineNumber = 0; lineNumber < lines.Length; ++lineNumber)
             {
-                string lineStr = lines[line];
-                (string label, Mnemonic mnemonic, string[] args, string _) = AsmTools.AsmSourceTools.ParseLine(lineStr);
+                string lineStr = lines[lineNumber];
+                (object _, string label, Mnemonic mnemonic, string[] args, string _) = AsmTools.AsmSourceTools.ParseLine(lineStr, lineNumber, fileID);
                 if (label.Length > 0)
                 {
                     int pos = lineStr.IndexOf(label);
@@ -1770,12 +1734,12 @@ namespace AsmDude2LS
                             {
                                 Start = new Position
                                 {
-                                    Line = line,
+                                    Line = lineNumber,
                                     Character = pos,
                                 },
                                 End = new Position
                                 {
-                                    Line = line,
+                                    Line = lineNumber,
                                     Character = pos + label.Length,
                                 }
                             }
@@ -1804,12 +1768,12 @@ namespace AsmDude2LS
                             {
                                 Start = new Position
                                 {
-                                    Line = line,
+                                    Line = lineNumber,
                                     Character = pos,
                                 },
                                 End = new Position
                                 {
-                                    Line = line,
+                                    Line = lineNumber,
                                     Character = pos + mnemonicStr.Length,
                                 }
                             }

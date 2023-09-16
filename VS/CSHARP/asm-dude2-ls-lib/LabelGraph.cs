@@ -28,65 +28,12 @@ namespace AsmDude2LS
     using System.Diagnostics.Contracts;
     using System.IO;
     using System.Linq;
-    using System.Windows.Xps;
 
     using AsmTools;
 
-    public readonly struct LabelID
-    {
-        private readonly ulong data;
+    using Microsoft.VisualStudio.LanguageServer.Protocol;
 
-        public LabelID(int lineNumber, int fileID, int startPos, int endPos)
-        {
-            data = ((ulong)lineNumber & 0xFFFFFF) | ((ulong)(fileID & 0xFF) << 24) | ((ulong)(startPos & 0xFFFFF) << 32) | ((ulong)(endPos & 0xFFFFF) << 48);
-        }
-
-        public int LineNumber
-        {
-            get
-            {
-                return (int)(this.data & 0x00FFFFFF);
-            }
-        }
-
-        public int File_Id
-        {
-            get
-            {
-                return (int)((this.data >> 24) & 0xFF);
-            }
-        }
-
-        public int Start_Pos
-        {
-            get
-            {
-                return (int)((this.data >> 32) & 0xFFFF);
-            }
-
-        }
-
-        public int End_Pos
-        {
-            get
-            {
-                return (int)((this.data >> 48) & 0xFFFF);
-            }
-        }
-
-        public bool Is_From_Main_File
-        {
-            get
-            {
-                return File_Id == 0;
-            }
-        }
-
-        public override string ToString()
-        {
-            return $"LabelID({LineNumber}, {File_Id}, {Start_Pos}, {End_Pos})";
-        }
-    }
+    using Range = Microsoft.VisualStudio.LanguageServer.Protocol.Range;
 
 
     public sealed class LabelGraph
@@ -97,7 +44,7 @@ namespace AsmDude2LS
 
         private readonly string[] lines;
         private readonly string thisFilename_;
-        private readonly bool caseSenstiveLabel_; 
+        private readonly bool caseSensitiveLabel_;
         private readonly Dictionary<int, string> filenames_;
 
         /// <summary>
@@ -108,11 +55,13 @@ namespace AsmDude2LS
         /// </summary>
         private readonly List<(string include_filename, string path, string source_filename, int lineNumber)> undefined_includes_;
 
-        private readonly Dictionary<string, List<LabelID>> usedAt_;
-        private readonly Dictionary<string, List<LabelID>> defAt_;
-        private readonly Dictionary<string, List<LabelID>> defAt_PROTO_;
-        private readonly HashSet<LabelID> hasLabel_;
-        private readonly HashSet<LabelID> hasDef_;
+        private readonly Dictionary<string, List<KeywordID>> usedAt_;
+        private readonly Dictionary<string, List<KeywordID>> defAt_;
+        private readonly Dictionary<string, List<KeywordID>> defAt_PROTO_;
+        private readonly HashSet<KeywordID> hasLabel_;
+        private readonly HashSet<KeywordID> hasDef_;
+
+        private readonly List<VSDiagnostic> current_diagnostics;
 
         public bool Enabled { get; private set; }
 
@@ -130,17 +79,18 @@ namespace AsmDude2LS
 
             this.lines = lines;
             this.thisFilename_ = filename;
-            this.caseSenstiveLabel_ = caseSensitiveLabel;
+            this.caseSensitiveLabel_ = caseSensitiveLabel;
             this.options = options;
 
             this.filenames_ = new Dictionary<int, string>();
-            this.usedAt_ = new Dictionary<string, List<LabelID>>(); // if LabelGraph is case insensitive then string is UPPERCASE
-            this.defAt_ = new Dictionary<string, List<LabelID>>();// if LabelGraph is case insensitive then string is UPPERCASE
-            this.defAt_PROTO_ = new Dictionary<string, List<LabelID>>();// if LabelGraph is case insensitive then string is UPPERCASE
-            this.hasLabel_ = new HashSet<LabelID>();
-            this.hasDef_ = new HashSet<LabelID>();
+            this.usedAt_ = new Dictionary<string, List<KeywordID>>(); // if LabelGraph is case insensitive then string is UPPERCASE
+            this.defAt_ = new Dictionary<string, List<KeywordID>>();// if LabelGraph is case insensitive then string is UPPERCASE
+            this.defAt_PROTO_ = new Dictionary<string, List<KeywordID>>();// if LabelGraph is case insensitive then string is UPPERCASE
+            this.hasLabel_ = new HashSet<KeywordID>();
+            this.hasDef_ = new HashSet<KeywordID>();
             this.undefined_includes_ = new List<(string include_filename, string path, string source_filename, int lineNumber)>();
             this.Enabled = this.options.IntelliSense_Label_Analysis_On;
+            this.current_diagnostics = new List<VSDiagnostic>();
 
             if (lines.Length >= options.MaxFileLines)
             {
@@ -153,7 +103,96 @@ namespace AsmDude2LS
                 this.Add_Linenumber(lines[lineNumber], lineNumber, 0);
             }
         }
- 
+
+        public void UpdateDiagnostics()
+        {
+
+            foreach ((string _, List<KeywordID> labelIDs) in this.defAt_)
+            {
+                if (labelIDs.Count > 1)
+                {
+                    foreach (KeywordID labelID in labelIDs)
+                    {
+                        try
+                        {
+                            VSTextDocumentIdentifier id = null;
+                            int lineNumber = labelID.LineNumber;
+                            Range range = new()
+                            {
+                                Start = new Position(lineNumber, labelID.Start_Pos),
+                                End = new Position(lineNumber, labelID.End_Pos),
+                            };
+
+                            //TODO handle labels from other files
+                            string lineStr = this.lines[lineNumber];
+                            string labelStr = lineStr[labelID.Start_Pos..labelID.End_Pos];
+
+                            this.current_diagnostics.Add(new VSDiagnostic()
+                            {
+                                Message = $"The label '{labelStr}' is a duplicate ({labelIDs.Count} definitions found).",
+                                Severity = DiagnosticSeverity.Error,
+                                Range = range,
+                                //Code = "Error Code Here",
+                                //CodeDescription = new CodeDescription
+                                //{
+                                //    Href = new Uri("https://www.microsoft.com")
+                                //},
+                                Projects = LanguageServer.GetVSDiagnosticProjectInformation(id),
+                                //Identifier = $"{lineNumber},{offsetStart} {lineNumber},{offsetEnd}",
+                                Tags = new DiagnosticTag[1] { (DiagnosticTag)AsmDiagnosticTag.IntellisenseError }
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            LogError(ex.ToString());
+                        }
+                    }
+                }
+            }
+            foreach (KeywordID labelID in this.Undefined_Labels)
+            {
+                try
+                {
+                    VSTextDocumentIdentifier id = null;
+                    int lineNumber = labelID.LineNumber;
+                    Range range = new()
+                    {
+                        Start = new Position(lineNumber, labelID.Start_Pos),
+                        End = new Position(lineNumber, labelID.End_Pos),
+                    };
+                    //TODO handle labels from other files
+                    string lineStr = this.lines[lineNumber];
+                    string labelStr = lineStr[labelID.Start_Pos..labelID.End_Pos];
+                    this.current_diagnostics.Add(new VSDiagnostic()
+                    {
+                        Message = $"No such label '{labelStr}'.",
+                        Severity = DiagnosticSeverity.Error,
+                        Range = range,
+                        //Code = "Error Code Here",
+                        //CodeDescription = new CodeDescription
+                        //{
+                        //    Href = new Uri("https://www.microsoft.com")
+                        //},
+                        Projects = LanguageServer.GetVSDiagnosticProjectInformation(id),
+                        //Identifier = $"{lineNumber},{offsetStart} {lineNumber},{offsetEnd}",
+                        Tags = new DiagnosticTag[1] { (DiagnosticTag)AsmDiagnosticTag.IntellisenseError }
+                    });
+                }
+                catch (Exception ex)
+                {
+                    LogError(ex.ToString());
+                }
+            }
+        }
+
+        public List<VSDiagnostic> Diagnostics
+        {
+            get
+            {
+                return this.current_diagnostics;
+            }
+        }
+
         private void LogInfo(string msg)
         {
             this.traceSource.TraceEvent(TraceEventType.Information, 0, msg);
@@ -169,7 +208,7 @@ namespace AsmDude2LS
 
         #region Public Methods
 
-        public string Get_Filename(LabelID labelID)
+        public string Get_Filename(KeywordID labelID)
         {
             if (this.filenames_.TryGetValue(labelID.File_Id, out string filename))
             {
@@ -182,26 +221,12 @@ namespace AsmDude2LS
             }
         }
 
-        public IEnumerable<List<LabelID>> Label_Clashes
-        {
-            get
-            {
-                foreach ((string _, List<LabelID> labelIDs) in this.defAt_)
-                {
-                    if (labelIDs.Count > 1)
-                    {
-                        yield return labelIDs;
-                    }
-                }
-            }
-        }
-
-        public IEnumerable<LabelID> Undefined_Labels
+        private IEnumerable<KeywordID> Undefined_Labels
         {
             get
             {
                 AssemblerEnum usedAssembler = this.options.Used_Assembler;
-                foreach ((string full_Qualified_Label, List<LabelID> labelIDs) in this.usedAt_)
+                foreach ((string full_Qualified_Label, List<KeywordID> labelIDs) in this.usedAt_)
                 {
                     // NOTE: if LabelGraph is case insensitive then full_Qualified_Label is UPPERCASE
                     if (this.defAt_.ContainsKey(full_Qualified_Label))
@@ -220,13 +245,7 @@ namespace AsmDude2LS
                         continue;
                     }
 
-                    Console.WriteLine($"Undefined_Labels: full_Qualified_Label {full_Qualified_Label}");
-                    foreach (var x in this.defAt_)
-                    {
-                        Console.WriteLine($"label {x.Key} ");
-                    }
-
-                    foreach (LabelID labelID in labelIDs)
+                    foreach (KeywordID labelID in labelIDs)
                     {
                         yield return labelID;
                     }
@@ -240,13 +259,13 @@ namespace AsmDude2LS
             {
                 SortedDictionary<string, string> result = new();
                 {
-                    foreach (KeyValuePair<string, List<LabelID>> entry in this.defAt_)
+                    foreach (KeyValuePair<string, List<KeywordID>> entry in this.defAt_)
                     {
-                        LabelID id = entry.Value[0];
+                        KeywordID id = entry.Value[0];
                         int lineNumber = id.LineNumber;
                         string filename = Path.GetFileName(this.Get_Filename(id));
                         string lineContent;
-                        if (id.Is_From_Main_File())
+                        if (id.Is_From_Main_File)
                         {
                             lineContent = " :" + this.lines.ElementAtOrDefault(lineNumber);
                         }
@@ -259,75 +278,6 @@ namespace AsmDude2LS
                 }
                 return result;
             }
-        }
-
-        public bool Has_Label(string label)
-        {
-            return this.defAt_.ContainsKey(label) || this.defAt_PROTO_.ContainsKey(label);
-        }
-
-        public bool Has_Label_Clash(string label)
-        {
-            if (this.defAt_.TryGetValue(label, out List<LabelID> list))
-            {
-                return list.Count > 1;
-            }
-            return false;
-        }
-
-        public SortedSet<LabelID> Get_Label_Def_Linenumbers(string label)
-        {
-            SortedSet<LabelID> results = new();
-            {
-                if (this.defAt_.TryGetValue(label, out List<LabelID> list))
-                {
-                    // AsmDudeToolsStatic.Output_INFO("LabelGraph:Get_Label_Def_Linenumbers: Regular label definitions. label=" + label + ": found "+list.Count +" definitions.");
-                    results.UnionWith(list);
-                }
-            }
-            {
-                if (this.defAt_PROTO_.TryGetValue(label, out List<LabelID> list))
-                {
-                    // AsmDudeToolsStatic.Output_INFO("LabelGraph:Get_Label_Def_Linenumbers: PROTO label definitions. label=" + label + ": found "+list.Count +" definitions.");
-                    results.UnionWith(list);
-                }
-            }
-            return results;
-        }
-
-        public HashSet<LabelID> Label_Used_At_Info(string full_Qualified_Label, string label)
-        {
-            Contract.Requires(full_Qualified_Label != null);
-            Contract.Requires(label != null);
-            throw new NotImplementedException("TODO: handling of case sensitive labels");
-
-            // AsmDudeToolsStatic.Output_INFO("LabelGraph:Label_Used_At_Info: full_Qualified_Label=" + full_Qualified_Label + "; label=" + label);
-            HashSet<LabelID> results = new();
-            {
-                if (this.usedAt_.TryGetValue(full_Qualified_Label, out List<LabelID> lines))
-                {
-                    results.UnionWith(lines);
-                }
-            }
-            {
-                if (this.usedAt_.TryGetValue(label, out List<LabelID> lines))
-                {
-                    results.UnionWith(lines);
-                }
-            }
-            if (full_Qualified_Label.Equals(label, StringComparison.Ordinal))
-            {
-                AssemblerEnum usedAssembler = this.options.Used_Assembler;
-                foreach ((string label2, List<LabelID> labelIDs) in this.usedAt_)
-                {
-                    string regular_Label = AsmDudeToolsStatic.Retrieve_Regular_Label(label2, usedAssembler);
-                    if (label.Equals(regular_Label, StringComparison.Ordinal))
-                    {
-                        results.UnionWith(labelIDs);
-                    }
-                }
-            }
-            return results;
         }
 
         public IEnumerable<(string include_Filename, string path, string source_Filename, int lineNumber)> Undefined_Includes { get { return this.undefined_includes_; } }
@@ -357,25 +307,25 @@ namespace AsmDude2LS
         {
             AssemblerEnum usedAssembler = this.options.Used_Assembler;
 
-            (string label, Mnemonic mnemonic, string[] args, string _) = AsmSourceTools.ParseLine(lineStr);
+            (object _, string label, Mnemonic mnemonic, string[] args, string _) = AsmSourceTools.ParseLine(lineStr, lineNumber, fileID);
 
             if (label.Length > 0)
             {
                 int startPos = lineStr.IndexOf(label);
-                LabelID labelID = new(lineNumber, fileID, startPos, startPos + label.Length);
+                KeywordID labelID = new(lineNumber, fileID, startPos, startPos + label.Length);
 
                 string extra_Tag_Info = null; // TODO asmTokenTag.Tag.Misc;
 
                 if ((extra_Tag_Info != null))// TODO && extra_Tag_Info.Equals(AsmTokenTag.MISC_KEYWORD_PROTO, StringComparison.Ordinal))
                 {
                     LogInfo("LabelGraph:Add_Linenumber: found PROTO labelDef \"" + label + "\" at line " + lineNumber);
-                    Add_To_Dictionary(label, labelID, this.caseSenstiveLabel_, this.defAt_PROTO_);
+                    Add_To_Dictionary(label, labelID, this.caseSensitiveLabel_, this.defAt_PROTO_);
                 }
                 else
                 {
                     string full_Qualified_Label = AsmDudeToolsStatic.Make_Full_Qualified_Label(extra_Tag_Info, label, usedAssembler);
                     LogInfo("LabelGraph:Add_Linenumber: found labelDef \"" + label + "\" at line " + lineNumber + "; full_Qualified_Label = \"" + full_Qualified_Label + "\".");
-                    Add_To_Dictionary(full_Qualified_Label, labelID, this.caseSenstiveLabel_, this.defAt_);
+                    Add_To_Dictionary(full_Qualified_Label, labelID, this.caseSensitiveLabel_, this.defAt_);
                 }
                 this.hasDef_.Add(labelID);
             }
@@ -394,8 +344,8 @@ namespace AsmDude2LS
                     } 
                     else
                     {
-                        LabelID labelID = new(lineNumber, fileID, startPos, startPos + labelStr.Length);
-                        Add_To_Dictionary(full_Qualified_Label, labelID, this.caseSenstiveLabel_, this.usedAt_);
+                        KeywordID labelID = new(lineNumber, fileID, startPos, startPos + labelStr.Length);
+                        Add_To_Dictionary(full_Qualified_Label, labelID, this.caseSensitiveLabel_, this.usedAt_);
                         LogInfo("LabelGraph:Add_Linenumber: used label \"" + label + "\" at line " + lineNumber);
                         this.hasLabel_.Add(labelID);
                     }
@@ -405,29 +355,28 @@ namespace AsmDude2LS
             bool hasIncludes = false; //TODO
             if (hasIncludes)
             {
-                //string directive_upcase = Get_Text(buffer, asmTokenTag).ToUpperInvariant();
-                //switch (directive_upcase)
-                //{
-                //    case "%INCLUDE":
-                //    case "INCLUDE":
-                //        {
-                //            if (enumerator.MoveNext()) // check whether a word exists after the include keyword
-                //            {
-                //                string currentFilename = this.Get_Filename(labelID);
-                //                string includeFilename = Get_Text(buffer, enumerator.Current);
-                //                this.Handle_Include(includeFilename, lineNumber, currentFilename);
-                //            }
-                //            break;
-                //        }
-                //    default:
-                //        {
-                //            break;
-                //        }
-                //}
+                if (args.Length > 1)
+                {
+                    string directive_uppercase = args[0].ToUpperInvariant();
+                    switch (directive_uppercase)
+                    {
+                        case "%INCLUDE":
+                        case "INCLUDE":
+                            {
+                                string includeFilename = args[1];
+                                this.Handle_Include(includeFilename, lineNumber, this.thisFilename_);
+                                break;
+                            }
+                        default:
+                            {
+                                break;
+                            }
+                    }
+                }
             }
         }
 
-        private static void Add_To_Dictionary(string key, LabelID id, bool caseSensitiveLabels, Dictionary<string, List<LabelID>> dict)
+        private static void Add_To_Dictionary(string key, KeywordID id, bool caseSensitiveLabels, Dictionary<string, List<KeywordID>> dict)
         {
             if ((key == null) || (key.Length == 0))
             {
@@ -435,72 +384,67 @@ namespace AsmDude2LS
             }
             string key2 = (caseSensitiveLabels) ? key : key.ToUpper();
 
-            if (dict.TryGetValue(key2, out List<LabelID> list))
+            if (dict.TryGetValue(key2, out List<KeywordID> list))
             {
                 list.Add(id);
             }
             else
             {
-                dict.Add(key2, new List<LabelID> { id });
+                dict.Add(key2, new List<KeywordID> { id });
             }
         }
 
-        //private void Handle_Include(string includeFilename, int lineNumber, string currentFilename)
-        //{
-        //    try
-        //    {
-        //        if (includeFilename.Length < 1)
-        //        {
-        //            //AsmDudeToolsStatic.Output_INFO("LabelGraph:Handle_Include: file with name \"" + includeFilename + "\" is too short.");
-        //            return;
-        //        }
-        //        if (includeFilename.Length > 2)
-        //        {
-        //            if (includeFilename.StartsWith("[", StringComparison.Ordinal) && includeFilename.EndsWith("]", StringComparison.Ordinal))
-        //            {
-        //                includeFilename = includeFilename.Substring(1, includeFilename.Length - 2);
-        //            }
-        //            else if (includeFilename.StartsWith("\"", StringComparison.Ordinal) && includeFilename.EndsWith("\"", StringComparison.Ordinal))
-        //            {
-        //                includeFilename = includeFilename.Substring(1, includeFilename.Length - 2);
-        //            }
-        //        }
-        //        string filePath = Path.GetDirectoryName(this.thisFilename_) + Path.DirectorySeparatorChar + includeFilename;
+        private void Handle_Include(string includeFilename, int lineNumber, string currentFilename)
+        {
+            try
+            {
+                if (includeFilename.Length < 1)
+                {
+                    //AsmDudeToolsStatic.Output_INFO("LabelGraph:Handle_Include: file with name \"" + includeFilename + "\" is too short.");
+                    return;
+                }
+                if (includeFilename.Length > 2)
+                {
+                    if (includeFilename.StartsWith("[", StringComparison.Ordinal) && includeFilename.EndsWith("]", StringComparison.Ordinal))
+                    {
+                        includeFilename = includeFilename.Substring(1, includeFilename.Length - 2);
+                    }
+                    else if (includeFilename.StartsWith("\"", StringComparison.Ordinal) && includeFilename.EndsWith("\"", StringComparison.Ordinal))
+                    {
+                        includeFilename = includeFilename.Substring(1, includeFilename.Length - 2);
+                    }
+                }
+                string filePath = Path.GetDirectoryName(this.thisFilename_) + Path.DirectorySeparatorChar + includeFilename;
 
-        //        if (!File.Exists(filePath))
-        //        {
-        //            //AsmDudeToolsStatic.Output_INFO("LabelGraph:Handle_Include: file " + filePath + " does not exist");
-        //            this.undefined_includes_.Add((include_filename: includeFilename, path: filePath, source_filename: currentFilename, lineNumber: lineNumber));
-        //        }
-        //        else
-        //        {
-        //            if (this.filenames_.Values.Contains(filePath))
-        //            {
-        //                //AsmDudeToolsStatic.Output_INFO("LabelGraph:Handle_Include: including file " + filePath + " has already been included");
-        //            }
-        //            else
-        //            {
-        //                //AsmDudeToolsStatic.Output_INFO("LabelGraph:Handle_Include: including file " + filePath);
+                if (!File.Exists(filePath))
+                {
+                    //AsmDudeToolsStatic.Output_INFO("LabelGraph:Handle_Include: file " + filePath + " does not exist");
+                    this.undefined_includes_.Add((include_filename: includeFilename, path: filePath, source_filename: currentFilename, lineNumber: lineNumber));
+                }
+                else
+                {
+                    if (this.filenames_.Values.Contains(filePath))
+                    {
+                        //AsmDudeToolsStatic.Output_INFO("LabelGraph:Handle_Include: including file " + filePath + " has already been included");
+                    }
+                    else
+                    {
+                        //AsmDudeToolsStatic.Output_INFO("LabelGraph:Handle_Include: including file " + filePath);
 
-        //                ITextDocument doc = this.docFactory_.CreateAndLoadTextDocument(filePath, this.contentType_, true, out bool characterSubstitutionsOccurred);
-        //                doc.FileActionOccurred += this.Doc_File_Action_Occurred;
-        //                uint fileId = (uint)this.filenames_.Count;
-        //                this.filenames_.Add(fileId, filePath);
-        //                this.Add_All(doc.TextBuffer, fileId);
-        //            }
-        //        }
-        //    }
-        //    catch (Exception e)
-        //    {
-        //        LogWarning("LabelGraph:Handle_Include. Exception:" + e.Message);
-        //    }
-        //}
+                        //ITextDocument doc = this.docFactory_.CreateAndLoadTextDocument(filePath, this.contentType_, true, out bool characterSubstitutionsOccurred);
+                        //doc.FileActionOccurred += this.Doc_File_Action_Occurred;
+                        int fileId = this.filenames_.Count;
+                        this.filenames_.Add(fileId, filePath);
 
-        //private void Doc_File_Action_Occurred(object sender, TextDocumentFileActionEventArgs e)
-        //{
-            //ITextDocument doc = sender as ITextDocument;
-            //AsmDudeToolsStatic.Output_INFO("LabelGraph:Doc_File_Action_Occurred: " + doc.FilePath + ":" + e.FileActionType);
-        //}
+                        //this.Add_All(doc.TextBuffer, fileId);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                LogWarning("LabelGraph:Handle_Include. Exception:" + e.Message);
+            }
+        }
 
         #endregion Private Methods
     }

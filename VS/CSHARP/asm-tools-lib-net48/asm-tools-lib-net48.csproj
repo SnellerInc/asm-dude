@@ -116,6 +116,9 @@
     <Compile Include="..\asm-tools-lib\Flags.cs">
       <Link>Flags.cs</Link>
     </Compile>
+    <Compile Include="..\asm-tools-lib\KeywordID.cs">
+      <Link>KeywordID.cs</Link>
+    </Compile>
     <Compile Include="..\asm-tools-lib\MicroArch.cs">
       <Link>MicroArch.cs</Link>
     </Compile>
