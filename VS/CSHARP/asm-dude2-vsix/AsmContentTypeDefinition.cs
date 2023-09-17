@@ -31,6 +31,7 @@ namespace AsmDude2
         [Export]
         [Name("asm!")]
         [BaseDefinition(CodeRemoteContentDefinition.CodeRemoteContentTypeName)]
+        //[BaseDefinition(CodeRemoteContentDefinition.CodeRemoteBaseTypeName)]
 #pragma warning disable CS0649 // Field 'AsmContentDefinition.asmContentTypeDefinition' is never assigned to, and will always have its default value null
         internal static ContentTypeDefinition asmContentTypeDefinition;
 #pragma warning restore CS0649 // Field 'AsmContentDefinition.asmContentTypeDefinition' is never assigned to, and will always have its default value null

@@ -50,7 +50,7 @@
 		<PackageProjectUrl>https://github.com/HJLebbink/asm-dude</PackageProjectUrl>
 		<ApplicationIcon>AsmDudePackage.ico</ApplicationIcon>
 		<IsPublishable>False</IsPublishable>
-		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+		<GeneratePackageOnBuild>False</GeneratePackageOnBuild>
 		<PackageId>AsmDude2</PackageId>
 		<Company>SnellerInc</Company>
 		<RepositoryType>git</RepositoryType>

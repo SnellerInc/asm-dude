@@ -39,6 +39,7 @@ using System.Windows.Forms;
 
 namespace AsmDude2
 {
+    //[ContentType(AsmDude2Package.DisassemblyContentType)]
     [ContentType(AsmDude2Package.AsmDudeContentType)]
     [Export(typeof(ILanguageClient))]
     [RunOnContext(RunningContext.RunOnHost)]
